@@ -31,7 +31,7 @@ If the remote request fails, the plugin only prints a warning and does not block
 Install the package first:
 
 ```bash
-npm install opencode-auto-provider-models
+npm install @guochen-thlg/opencode-auto-provider-models
 ```
 
 Add this to your `~/.config/opencode/opencode.jsonc`:
@@ -41,7 +41,7 @@ Add this to your `~/.config/opencode/opencode.jsonc`:
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     [
-      "opencode-auto-provider-models",
+      "@guochen-thlg/opencode-auto-provider-models",
       {
         "provider": "custom-provider"
       }
@@ -56,7 +56,7 @@ If you only want to sync part of the remote model list:
 {
   "plugin": [
     [
-      "opencode-auto-provider-models",
+      "@guochen-thlg/opencode-auto-provider-models",
       {
         "provider": "custom-provider",
         "include": ["gpt-5.4", "gpt-5.4-mini", "glm-5"]
@@ -72,7 +72,7 @@ If you want to exclude specific models:
 {
   "plugin": [
     [
-      "opencode-auto-provider-models",
+      "@guochen-thlg/opencode-auto-provider-models",
       {
         "provider": "custom-provider",
         "exclude": ["internal-test-model"]
@@ -88,7 +88,7 @@ If the provider's `options.apiKey` is not the final key to use, you can explicit
 {
   "plugin": [
     [
-      "opencode-auto-provider-models",
+      "@guochen-thlg/opencode-auto-provider-models",
       {
         "provider": "custom-provider",
         "apiKeyEnv": "CUSTOM_PROVIDER_API_KEY"

@@ -1,11 +1,29 @@
 {
-  "name": "opencode-auto-provider-models",
+  "name": "@guochen-thlg/opencode-auto-provider-models",
   "version": "0.1.0",
   "description": "OpenCode plugin that auto-syncs models for an OpenAI-compatible provider.",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "openai-compatible",
+    "models"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GuoChen-thlg/opencode-auto-provider-models.git"
+  },
+  "homepage": "https://github.com/GuoChen-thlg/opencode-auto-provider-models#readme",
+  "bugs": {
+    "url": "https://github.com/GuoChen-thlg/opencode-auto-provider-models/issues"
+  },
   "type": "module",
   "main": "./opencode-auto-provider-models.js",
   "exports": {
     ".": "./opencode-auto-provider-models.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "files": [
     "opencode-auto-provider-models.js",
