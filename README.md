@@ -162,3 +162,4 @@ git push origin v<version>
 ```
 
 5. Create a GitHub release for the same tag
+6. If the repository workflow is enabled, publishing the release can also trigger the automated GitHub Packages publish job

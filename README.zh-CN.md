@@ -162,3 +162,4 @@ git push origin v<version>
 ```
 
 5. 为同一个 tag 创建 GitHub release
+6. 如果仓库 workflow 已启用，发布 release 时也可以触发自动发布 GitHub Packages 的任务
