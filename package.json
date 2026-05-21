@@ -1,0 +1,15 @@
+{
+  "name": "opencode-auto-provider-models",
+  "version": "0.1.0",
+  "description": "OpenCode plugin that auto-syncs models for an OpenAI-compatible provider.",
+  "type": "module",
+  "main": "./opencode-auto-provider-models.js",
+  "exports": {
+    ".": "./opencode-auto-provider-models.js"
+  },
+  "files": [
+    "opencode-auto-provider-models.js",
+    "README.md",
+    "README.zh-CN.md"
+  ]
+}
