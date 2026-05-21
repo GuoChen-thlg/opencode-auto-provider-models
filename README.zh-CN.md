@@ -34,6 +34,18 @@
 npm install @guochen-thlg/opencode-auto-provider-models
 ```
 
+如果你是从 GitHub Packages 安装，先为这个 scope 配置 npm registry：
+
+```ini
+@guochen-thlg:registry=https://npm.pkg.github.com
+```
+
+如果包对你的环境需要认证，给 `~/.npmrc` 增加带 package 权限的 GitHub Personal Access Token：
+
+```ini
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_CLASSIC_PAT
+```
+
 在你的 `~/.config/opencode/opencode.jsonc` 里加入：
 
 ```jsonc
@@ -129,3 +141,24 @@ npm install @guochen-thlg/opencode-auto-provider-models
 - 这是启动时同步，不是运行中的热更新
 - 修改 `opencode` 配置或升级插件包后，需要退出并重启 `opencode`
 - 该插件只负责把模型列表注入到运行时配置，不会回写你的 `opencode.jsonc`
+
+## 发布
+
+发布新版本到 GitHub Packages 的步骤：
+
+1. 更新 `package.json` 里的 `version`
+2. 提交并推送本次发布相关改动
+3. 发布包：
+
+```bash
+npm publish --registry=https://npm.pkg.github.com
+```
+
+4. 创建并推送对应版本标签：
+
+```bash
+git tag -a v<version> -m "v<version>"
+git push origin v<version>
+```
+
+5. 为同一个 tag 创建 GitHub release

@@ -34,6 +34,18 @@ Install the package first:
 npm install @guochen-thlg/opencode-auto-provider-models
 ```
 
+If you are installing from GitHub Packages, configure your npm registry for this scope first:
+
+```ini
+@guochen-thlg:registry=https://npm.pkg.github.com
+```
+
+If the package is private to your account or your environment requires authentication, add a GitHub personal access token with package permissions to `~/.npmrc`:
+
+```ini
+//npm.pkg.github.com/:_authToken=YOUR_GITHUB_CLASSIC_PAT
+```
+
 Add this to your `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
@@ -129,3 +141,24 @@ If the remote endpoint also returns the following fields, the plugin maps them w
 - Sync happens at startup, not as a hot reload during runtime
 - Restart `opencode` after changing its config or upgrading the plugin package
 - The plugin only injects the model list into runtime config and does not write back to `opencode.jsonc`
+
+## Release
+
+To publish a new version to GitHub Packages:
+
+1. Update `version` in `package.json`
+2. Commit and push the release changes
+3. Publish the package:
+
+```bash
+npm publish --registry=https://npm.pkg.github.com
+```
+
+4. Create and push the version tag:
+
+```bash
+git tag -a v<version> -m "v<version>"
+git push origin v<version>
+```
+
+5. Create a GitHub release for the same tag
