@@ -31,7 +31,7 @@
 先安装 npm 包：
 
 ```bash
-npm install @guochen-thlg/opencode-auto-provider-models
+npm install @guochen-thlg/opencode-auto-provider-models --registry=https://npm.pkg.github.com
 ```
 
 如果你是从 GitHub Packages 安装，先为这个 scope 配置 npm registry：
