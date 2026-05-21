@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-05-21
+
+- add duplicate publish guard to the GitHub Packages release workflow
+- add a minimal smoke test workflow for push and pull request events
+- add `CHANGELOG.md` to track released changes
+
 ## [0.1.2] - 2026-05-21
 
 - add MIT `LICENSE`
