@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-05-21
+
+- update GitHub Actions workflows to use Node 24
+- force JavaScript actions onto the Node 24 runtime to avoid Node 20 deprecation warnings
+- harden the release publish workflow so an already-published version is treated as success
+
 ## [0.1.3] - 2026-05-21
 
 - add duplicate publish guard to the GitHub Packages release workflow
