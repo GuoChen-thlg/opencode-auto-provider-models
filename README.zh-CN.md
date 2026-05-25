@@ -1,5 +1,7 @@
 # opencode-auto-provider-models
 
+> 该项目不是 OpenCode 团队官方开发，且不存在任何隶属关系。
+
 [English](./README.md) | 简体中文
 
 给现有 `opencode` 自定义 provider 自动同步模型列表的本地插件。

@@ -1,5 +1,7 @@
 # opencode-auto-provider-models
 
+> NOT an official project by the OpenCode team. No affiliation.
+
 English | [简体中文](./README.zh-CN.md)
 
 Local plugin for `opencode` that auto-syncs the model list for an existing custom provider.
