@@ -30,22 +30,10 @@
 
 ## 配置方式
 
-先安装 npm 包：
+从 GitHub 直接安装：
 
 ```bash
-npm install @guochen-thlg/opencode-auto-provider-models --registry=https://npm.pkg.github.com
-```
-
-如果你是从 GitHub Packages 安装，先为这个 scope 配置 npm registry：
-
-```ini
-@guochen-thlg:registry=https://npm.pkg.github.com
-```
-
-如果包对你的环境需要认证，给 `~/.npmrc` 增加带 package 权限的 GitHub Personal Access Token：
-
-```ini
-//npm.pkg.github.com/:_authToken=YOUR_GITHUB_CLASSIC_PAT
+npm install guochen-thlg/opencode-auto-provider-models
 ```
 
 在你的 `~/.config/opencode/opencode.jsonc` 里加入：

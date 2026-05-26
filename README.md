@@ -30,22 +30,10 @@ If the remote request fails, the plugin only prints a warning and does not block
 
 ## Configuration
 
-Install the package first:
+Install directly from GitHub:
 
 ```bash
-npm install @guochen-thlg/opencode-auto-provider-models --registry=https://npm.pkg.github.com
-```
-
-If you are installing from GitHub Packages, configure your npm registry for this scope first:
-
-```ini
-@guochen-thlg:registry=https://npm.pkg.github.com
-```
-
-If the package is private to your account or your environment requires authentication, add a GitHub personal access token with package permissions to `~/.npmrc`:
-
-```ini
-//npm.pkg.github.com/:_authToken=YOUR_GITHUB_CLASSIC_PAT
+npm install guochen-thlg/opencode-auto-provider-models
 ```
 
 Add this to your `~/.config/opencode/opencode.jsonc`:
