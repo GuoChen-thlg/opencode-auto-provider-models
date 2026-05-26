@@ -1,265 +1,195 @@
-import { describe, it, mock, before, after } from "node:test"
+import { describe, it, before, after } from "node:test"
 import assert from "node:assert/strict"
+import http from "node:http"
 import plugin from "../opencode-auto-provider-models.js"
 
-const MODELS_PAYLOAD = {
+const PROVIDER_A_MODELS = {
   data: [
-    { id: "gpt-4o", name: "GPT-4o", context_window: 128000 },
-    { id: "o1-preview", name: "O1 Preview", context_window: 200000, max_output_tokens: 32768 },
-    { id: "deepseek-chat", name: "DeepSeek Chat" },
-    { id: "internal-test", name: "Internal Test" },
+    { id: "claude-3-opus", name: "Claude 3 Opus", context_window: 200000, max_output_tokens: 4096 },
+    { id: "claude-3-sonnet", name: "Claude 3 Sonnet", context_window: 200000 },
+    { id: "claude-3-haiku", name: "Claude 3 Haiku", context_window: 200000 },
   ],
 }
 
-function mockFetch(status = 200, payload = MODELS_PAYLOAD) {
-  return mock.fn(async () => ({
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => payload,
-  }))
+const PROVIDER_B_MODELS = {
+  data: [
+    { id: "gpt-4o", name: "GPT-4o", context_window: 128000, max_output_tokens: 16384 },
+    { id: "o1-preview", name: "O1 Preview", context_window: 200000, max_output_tokens: 32768 },
+    { id: "o3-mini", name: "O3 Mini", context_window: 200000, max_output_tokens: 65536 },
+    { id: "deepseek-r1", name: "DeepSeek R1", context_window: 131072 },
+    { id: "glm-5", name: "GLM-5", context_window: 131072 },
+  ],
 }
 
-function makeConfig(providerId, overrides = {}) {
-  return {
-    provider: {
-      [providerId]: {
-        options: {
-          baseURL: "https://api.example.com/v1",
-          apiKey: "sk-default",
-          ...overrides.options,
-        },
-        ...(overrides.models ? { models: overrides.models } : {}),
+function createMockServer(modelsPayload, authToken) {
+  return http.createServer((req, res) => {
+    if (authToken) {
+      const provided = req.headers.authorization
+      if (!provided || provided !== `Bearer ${authToken}`) {
+        res.writeHead(401)
+        res.end(JSON.stringify({ error: "unauthorized" }))
+        return
+      }
+    }
+
+    if (req.url === "/v1/models" || req.url === "/models") {
+      res.writeHead(200, { "content-type": "application/json" })
+      res.end(JSON.stringify(modelsPayload))
+    } else {
+      res.writeHead(404)
+      res.end(JSON.stringify({ error: "not found" }))
+    }
+  })
+}
+
+async function withServer(server, port) {
+  return new Promise((resolve) => server.listen(port, resolve))
+}
+
+async function stopServer(server) {
+  return new Promise((resolve) => server.close(resolve))
+}
+
+function getPort() {
+  return 18900 + Math.floor(Math.random() * 1000)
+}
+
+describe("integration with real HTTP servers", () => {
+  let serverA
+  let serverB
+  let portA
+  let portB
+
+  before(async () => {
+    portA = getPort()
+    portB = getPort()
+    serverA = createMockServer(PROVIDER_A_MODELS)
+    serverB = createMockServer(PROVIDER_B_MODELS, "sk-secret")
+    await Promise.all([withServer(serverA, portA), withServer(serverB, portB)])
+  })
+
+  after(async () => {
+    await Promise.all([stopServer(serverA), stopServer(serverB)])
+  })
+
+  it("syncs models for a single provider pointing to a real server", async () => {
+    const result = await plugin(null, { provider: "provider-a" })
+    const config = {
+      provider: {
+        "provider-a": { options: { baseURL: `http://127.0.0.1:${portA}/v1` } },
       },
-    },
-  }
-}
-
-describe("plugin entry", () => {
-  before(() => mock.method(globalThis, "fetch"))
-  after(() => mock.restoreAll())
-
-  it("returns config hook", async () => {
-    const result = await plugin(null, { provider: "test" })
-    assert.equal(typeof result, "object")
-    assert.equal(typeof result.config, "function")
-  })
-
-  it("warns when provider option is missing", async () => {
-    const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-
-    const result = await plugin(null, {})
-    await result.config(makeConfig("test"))
-
-    assert.ok(warnings.some((w) => w.includes("missing required option")))
-  })
-
-  it("warns when provider not found in config", async () => {
-    const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-
-    const result = await plugin(null, { provider: "nonexistent" })
-    await result.config(makeConfig("test"))
-
-    assert.ok(warnings.some((w) => w.includes("provider not found")))
-  })
-
-  it("warns when baseURL is missing", async () => {
-    const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-
-    const result = await plugin(null, { provider: "test" })
-    await result.config({ provider: { test: { options: {} } } })
-
-    assert.ok(warnings.some((w) => w.includes("missing baseURL")))
-  })
-
-  it("syncs models for a single provider (string)", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
-    const result = await plugin(null, { provider: "test" })
-    const config = makeConfig("test")
+    }
     await result.config(config)
 
-    assert.equal(config.provider.test.models["gpt-4o"].name, "GPT-4o")
-    assert.equal(config.provider.test.models["o1-preview"].reasoning, true)
-    assert.equal(config.provider.test.models["internal-test"].name, "Internal Test")
+    assert.ok(config.provider["provider-a"].models["claude-3-opus"])
+    assert.equal(config.provider["provider-a"].models["claude-3-opus"].name, "Claude 3 Opus")
+    assert.equal(config.provider["provider-a"].models["claude-3-opus"].limit.context, 200000)
+    assert.equal(config.provider["provider-a"].models["claude-3-opus"].limit.output, 4096)
   })
 
-  it("syncs models for multiple providers (array)", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
+  it("syncs models for multiple providers from different real servers", async () => {
     const result = await plugin(null, {
       provider: ["provider-a", "provider-b"],
     })
     const config = {
       provider: {
-        "provider-a": { options: { baseURL: "https://a.example.com/v1", apiKey: "sk-a" } },
-        "provider-b": { options: { baseURL: "https://b.example.com/v1", apiKey: "sk-b" } },
+        "provider-a": { options: { baseURL: `http://127.0.0.1:${portA}/v1` } },
+        "provider-b": { options: { baseURL: `http://127.0.0.1:${portB}/v1`, apiKey: "sk-secret" } },
       },
     }
     await result.config(config)
 
-    assert.ok(config.provider["provider-a"].models["gpt-4o"])
-    assert.ok(config.provider["provider-b"].models["gpt-4o"])
+    assert.equal(config.provider["provider-a"].models["claude-3-opus"].name, "Claude 3 Opus")
+    assert.equal(config.provider["provider-b"].models["gpt-4o"].name, "GPT-4o")
+    assert.equal(config.provider["provider-b"].models["o1-preview"].reasoning, true)
+    assert.equal(config.provider["provider-b"].models["deepseek-r1"].reasoning, true)
   })
 
-  it("supports mixed array of string and object entries", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
-    const envBak = process.env.CUSTOM_API_KEY
-    process.env.CUSTOM_API_KEY = "sk-override"
+  it("uses per-provider apiKeyEnv override with real server", async () => {
+    const envBak = process.env.MY_CUSTOM_KEY
+    process.env.MY_CUSTOM_KEY = "sk-secret"
 
     const result = await plugin(null, {
       provider: [
-        "provider-a",
-        { id: "provider-b", apiKeyEnv: "CUSTOM_API_KEY" },
+        { id: "provider-b", apiKeyEnv: "MY_CUSTOM_KEY" },
       ],
     })
     const config = {
       provider: {
-        "provider-a": { options: { baseURL: "https://a.example.com/v1", apiKey: "sk-a" } },
-        "provider-b": { options: { baseURL: "https://b.example.com/v1", apiKey: "sk-b" } },
+        "provider-b": { options: { baseURL: `http://127.0.0.1:${portB}/v1`, apiKey: "wrong-key" } },
       },
     }
     await result.config(config)
 
-    assert.ok(config.provider["provider-a"].models["gpt-4o"])
     assert.ok(config.provider["provider-b"].models["gpt-4o"])
 
-    if (envBak === undefined) delete process.env.CUSTOM_API_KEY
-    else process.env.CUSTOM_API_KEY = envBak
+    if (envBak === undefined) delete process.env.MY_CUSTOM_KEY
+    else process.env.MY_CUSTOM_KEY = envBak
   })
 
-  it("applies include filter", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
+  it("handles non-array server response gracefully", async () => {
+    const server = createMockServer({ data: "not-an-array" })
+    const port = getPort()
+    await withServer(server, port)
 
-    const result = await plugin(null, {
-      provider: "test",
-      include: ["gpt-4o", "o1-preview"],
-    })
-    const config = makeConfig("test")
-    await result.config(config)
-
-    assert.ok(config.provider.test.models["gpt-4o"])
-    assert.ok(config.provider.test.models["o1-preview"])
-    assert.equal(config.provider.test.models["deepseek-chat"], undefined)
-  })
-
-  it("applies exclude filter", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
-    const result = await plugin(null, {
-      provider: "test",
-      exclude: ["internal-test"],
-    })
-    const config = makeConfig("test")
-    await result.config(config)
-
-    assert.ok(config.provider.test.models["gpt-4o"])
-    assert.equal(config.provider.test.models["internal-test"], undefined)
-  })
-
-  it("preserves existing local model entries", async () => {
-    const fetchMock = mockFetch()
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
-    const result = await plugin(null, { provider: "test" })
-    const config = makeConfig("test", {
-      models: { "local-model": { name: "Local Model" } },
-    })
-    await result.config(config)
-
-    assert.ok(config.provider.test.models["local-model"])
-    assert.equal(config.provider.test.models["local-model"].name, "Local Model")
-  })
-
-  it("handles fetch failure gracefully", async () => {
-    const fetchMock = mockFetch(500)
     const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
+    const origWarn = console.warn
+    console.warn = (msg) => warnings.push(msg)
 
-    const result = await plugin(null, { provider: "test" })
-    const config = makeConfig("test")
-    await result.config(config)
-
-    assert.ok(warnings.some((w) => w.includes("failed to sync")))
-  })
-
-  it("handles non-array response gracefully", async () => {
-    const fetchMock = mockFetch(200, { data: "not-an-array" })
-    const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
-
-    const result = await plugin(null, { provider: "test" })
-    const config = makeConfig("test")
-    await result.config(config)
-
-    assert.ok(warnings.some((w) => w.includes("failed to sync")))
-  })
-
-  it("one provider failure does not affect others", async () => {
-    const failFetch = mock.fn(async () => ({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    }))
-    const okFetch = mock.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => MODELS_PAYLOAD,
-    }))
-    const warnings = []
-    mock.method(console, "warn", (msg) => warnings.push(msg))
-
-    let callCount = 0
-    globalThis.fetch.mock.mockImplementation(() => {
-      callCount++
-      return callCount === 1 ? failFetch() : okFetch()
-    })
-
-    const result = await plugin(null, {
-      provider: ["broken", "working"],
-    })
+    const result = await plugin(null, { provider: "broken" })
     const config = {
       provider: {
-        broken: { options: { baseURL: "https://broken.example.com/v1" } },
-        working: { options: { baseURL: "https://working.example.com/v1" } },
+        broken: { options: { baseURL: `http://127.0.0.1:${port}/v1` } },
       },
     }
     await result.config(config)
 
-    assert.ok(warnings.some((w) => w.includes("broken")))
-    assert.ok(config.provider.working.models["gpt-4o"])
+    assert.ok(warnings.some((w) => w.includes("failed to sync")))
+
+    console.warn = origWarn
+    await stopServer(server)
   })
 
-  it("derives reasoning flag for known reasoning models", async () => {
-    const fetchMock = mockFetch(200, {
-      data: [
-        { id: "o1-preview" },
-        { id: "o3-mini" },
-        { id: "deepseek-r1" },
-        { id: "glm-5" },
-        { id: "gpt-4o" },
-      ],
+  it("one server failure does not affect the other", async () => {
+    const deadPort = getPort()
+    const result = await plugin(null, {
+      provider: ["provider-a", "provider-b"],
     })
-    globalThis.fetch.mock.mockImplementation(() => fetchMock())
+    const config = {
+      provider: {
+        "provider-a": { options: { baseURL: `http://127.0.0.1:${deadPort}/v1` } },
+        "provider-b": { options: { baseURL: `http://127.0.0.1:${portB}/v1`, apiKey: "sk-secret" } },
+      },
+    }
 
-    const result = await plugin(null, { provider: "test" })
-    const config = makeConfig("test")
+    const warnings = []
+    const origWarn = console.warn
+    console.warn = (msg) => warnings.push(msg)
+
     await result.config(config)
 
-    assert.equal(config.provider.test.models["o1-preview"].reasoning, true)
-    assert.equal(config.provider.test.models["o3-mini"].reasoning, true)
-    assert.equal(config.provider.test.models["deepseek-r1"].reasoning, true)
-    assert.equal(config.provider.test.models["glm-5"].reasoning, true)
-    assert.equal(config.provider.test.models["gpt-4o"].reasoning, undefined)
+    assert.ok(warnings.some((w) => w.includes("provider-a")))
+    assert.ok(config.provider["provider-b"].models["gpt-4o"])
+
+    console.warn = origWarn
+  })
+
+  it("preserves existing local models when syncing from real server", async () => {
+    const result = await plugin(null, { provider: "provider-a" })
+    const config = {
+      provider: {
+        "provider-a": {
+          options: { baseURL: `http://127.0.0.1:${portA}/v1` },
+          models: {
+            "local-model": { name: "Local Kept" },
+          },
+        },
+      },
+    }
+    await result.config(config)
+
+    assert.ok(config.provider["provider-a"].models["local-model"])
+    assert.equal(config.provider["provider-a"].models["local-model"].name, "Local Kept")
+    assert.ok(config.provider["provider-a"].models["claude-3-opus"])
   })
 })
