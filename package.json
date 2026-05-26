@@ -25,6 +25,9 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
+  "scripts": {
+    "test": "node --test"
+  },
   "files": [
     "opencode-auto-provider-models.js",
     "README.md",
