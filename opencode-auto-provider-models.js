@@ -162,15 +162,6 @@ async function syncProvider(config, providerEntry, globalOpts) {
   const providerId = providerEntry.id
 
   const providerConfig = config?.provider?.[providerId]
-  console.log("[auto-provider-models]", JSON.stringify({
-    step: "syncProvider",
-    providerId,
-    found: !!providerConfig,
-    providerKeys: config?.provider ? Object.keys(config.provider) : null,
-    hasBaseURL: !!providerConfig?.options?.baseURL,
-    baseURL: providerConfig?.options?.baseURL,
-  }))
-
   if (!providerConfig || typeof providerConfig !== "object") {
     console.warn(`[auto-provider-models] provider not found in config: ${providerId}`)
     return
@@ -196,12 +187,6 @@ async function syncProvider(config, providerEntry, globalOpts) {
       nextModels[modelId] = buildModelEntry(modelId, remoteModel, existingModels[modelId])
     }
 
-    console.log("[auto-provider-models]", JSON.stringify({
-      step: "syncProvider.done",
-      providerId,
-      modelCount: Object.keys(nextModels).length,
-    }))
-
     providerConfig.models = nextModels
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -213,12 +198,6 @@ export default async function autoProviderModelsPlugin(_input, pluginOptions = {
   return {
     config: async (config) => {
       const rawEntries = resolveProviderEntries(pluginOptions)
-      console.log("[auto-provider-models]", JSON.stringify({
-        pluginOptions,
-        rawEntries,
-        type: typeof pluginOptions.provider,
-        isArray: Array.isArray(pluginOptions.provider),
-      }))
       if (rawEntries.length === 0) {
         console.warn("[auto-provider-models] missing required option: provider")
         return
@@ -228,17 +207,7 @@ export default async function autoProviderModelsPlugin(_input, pluginOptions = {
         .map(normalizeProviderEntry)
         .filter((e) => e !== null)
 
-      console.log("[auto-provider-models]", JSON.stringify({
-        entries,
-        availableProviders: config?.provider ? Object.keys(config.provider) : null,
-      }))
-
       await Promise.all(entries.map((entry) => syncProvider(config, entry, pluginOptions)))
-
-      console.log("[auto-provider-models]", JSON.stringify({
-        afterSync: entries.map((e) => e.id),
-        modelsExist: entries.map((e) => !!config?.provider?.[e.id]?.models),
-      }))
     },
   }
 }
