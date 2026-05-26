@@ -36,7 +36,7 @@ Install directly from GitHub:
 npm install guochen-thlg/opencode-auto-provider-models
 ```
 
-Add this to your `~/.config/opencode/opencode.jsonc`:
+## Single provider
 
 ```jsonc
 {
@@ -52,6 +52,46 @@ Add this to your `~/.config/opencode/opencode.jsonc`:
 }
 ```
 
+## Multiple providers
+
+Pass an array to `provider`:
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": ["custom-provider1", "custom-provider2"]
+      }
+    ]
+  ]
+}
+```
+
+Each entry can also be an object for per-provider overrides (e.g. a different `apiKeyEnv`):
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": [
+          "custom-provider1",
+          {
+            "id": "custom-provider2",
+            "apiKeyEnv": "CUSTOM_PROVIDER2_API_KEY"
+          }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+## Filter models
+
 If you only want to sync part of the remote model list:
 
 ```jsonc
@@ -60,7 +100,7 @@ If you only want to sync part of the remote model list:
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
+        "provider": "custom-provider1",
         "include": ["gpt-5.4", "gpt-5.4-mini", "glm-5"]
       }
     ]
@@ -68,7 +108,7 @@ If you only want to sync part of the remote model list:
 }
 ```
 
-If you want to exclude specific models:
+`include` and `exclude` work with multiple providers too:
 
 ```jsonc
 {
@@ -76,13 +116,15 @@ If you want to exclude specific models:
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
+        "provider": ["custom-provider1", "custom-provider2"],
         "exclude": ["internal-test-model"]
       }
     ]
   ]
 }
 ```
+
+## API key
 
 If the provider's `options.apiKey` is not the final key to use, you can explicitly point the plugin to an environment variable:
 
@@ -92,8 +134,8 @@ If the provider's `options.apiKey` is not the final key to use, you can explicit
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
-        "apiKeyEnv": "CUSTOM_PROVIDER_API_KEY"
+        "provider": "custom-provider1",
+        "apiKeyEnv": "CUSTOM_PROVIDER1_API_KEY"
       }
     ]
   ]

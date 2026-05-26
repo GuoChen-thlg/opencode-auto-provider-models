@@ -36,7 +36,7 @@
 npm install guochen-thlg/opencode-auto-provider-models
 ```
 
-在你的 `~/.config/opencode/opencode.jsonc` 里加入：
+### 单个供应商
 
 ```jsonc
 {
@@ -52,6 +52,46 @@ npm install guochen-thlg/opencode-auto-provider-models
 }
 ```
 
+### 多个供应商
+
+`provider` 直接传数组即可：
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": ["custom-provider1", "custom-provider2"]
+      }
+    ]
+  ]
+}
+```
+
+每个条目也支持对象形式，以覆盖单个供应商的专属配置（如不同的 `apiKeyEnv`）：
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": [
+          "custom-provider1",
+          {
+            "id": "custom-provider2",
+            "apiKeyEnv": "CUSTOM_PROVIDER2_API_KEY"
+          }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+### 过滤模型
+
 如果你想只同步部分模型：
 
 ```jsonc
@@ -60,7 +100,7 @@ npm install guochen-thlg/opencode-auto-provider-models
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
+        "provider": "custom-provider1",
         "include": ["gpt-5.4", "gpt-5.4-mini", "glm-5"]
       }
     ]
@@ -68,7 +108,7 @@ npm install guochen-thlg/opencode-auto-provider-models
 }
 ```
 
-如果要排除部分模型：
+`include` 和 `exclude` 对多供应商同样生效：
 
 ```jsonc
 {
@@ -76,13 +116,15 @@ npm install guochen-thlg/opencode-auto-provider-models
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
+        "provider": ["custom-provider1", "custom-provider2"],
         "exclude": ["internal-test-model"]
       }
     ]
   ]
 }
 ```
+
+### API 密钥
 
 如果 provider 的 `options.apiKey` 不是最终要用的 key，也可以显式指定环境变量名：
 
@@ -92,8 +134,8 @@ npm install guochen-thlg/opencode-auto-provider-models
     [
       "@guochen-thlg/opencode-auto-provider-models",
       {
-        "provider": "custom-provider",
-        "apiKeyEnv": "CUSTOM_PROVIDER_API_KEY"
+        "provider": "custom-provider1",
+        "apiKeyEnv": "CUSTOM_PROVIDER1_API_KEY"
       }
     ]
   ]
