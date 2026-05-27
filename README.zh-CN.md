@@ -142,6 +142,30 @@ npm install guochen-thlg/opencode-auto-provider-models
 }
 ```
 
+## 启动性能
+
+插件在每次启动时都会对每个 provider 的 `${baseURL}/models` 发起 HTTP 请求。以下选项可以控制这一行为：
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": "custom-provider",
+        "timeout": 5000,
+        "cacheTTL": 300000
+      }
+    ]
+  ]
+}
+```
+
+| 选项 | 默认值 | 说明 |
+|---|---|---|
+| `timeout` | `5000` | 等待 `/models` 响应的最长时间（毫秒）。防止慢响应或不可用的 provider 阻塞启动。 |
+| `cacheTTL` | `0` | 复用上次拉取的模型列表的时间（毫秒）。设为 `300000`（5 分钟）可在大部分重启时跳过请求。`0` 表示不缓存。 |
+
 ## 远端返回格式
 
 插件按 OpenAI 兼容格式读取：

@@ -142,6 +142,30 @@ If the provider's `options.apiKey` is not the final key to use, you can explicit
 }
 ```
 
+## Startup performance
+
+The plugin sends an HTTP request to `${baseURL}/models` for each provider on every startup. Two options help control this:
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": "custom-provider",
+        "timeout": 5000,
+        "cacheTTL": 300000
+      }
+    ]
+  ]
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `timeout` | `5000` | Max wait (ms) for the `/models` response. Prevents a slow or hung provider from blocking startup. |
+| `cacheTTL` | `0` | How long (ms) to reuse the last fetched model list without re-requesting. Set to `300000` (5 min) to skip the request on most restarts. `0` disables caching. |
+
 ## Remote Response Shape
 
 The plugin reads the standard OpenAI-compatible format:
