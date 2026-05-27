@@ -1,6 +1,6 @@
 {
   "name": "@guochen-thlg/opencode-auto-provider-models",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenCode plugin that auto-syncs models for an OpenAI-compatible provider.",
   "keywords": [
     "opencode",

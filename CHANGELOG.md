@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.6] - 2026-05-27
+
+- add configurable `timeout` (default 5000ms) to prevent slow provider from blocking startup
+- add configurable `cacheTTL` to skip repeated `/models` fetches within TTL window
+- fix: startup would hang indefinitely if provider `/models` endpoint is unreachable
+
 ## [0.1.4] - 2026-05-21
 
 - update GitHub Actions workflows to use Node 24

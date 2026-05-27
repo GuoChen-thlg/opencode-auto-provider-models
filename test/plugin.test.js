@@ -295,6 +295,101 @@ describe("plugin entry", () => {
     assert.ok(config.provider.working.models["gpt-4o"])
   })
 
+  it("uses timeout option and warns on slow request", async () => {
+    globalThis.fetch.mock.mockImplementation(async (_url, opts) => {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new DOMException("signal timed out", "TimeoutError"))
+        }, 20_000)
+        opts?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer)
+          reject(new DOMException("The operation was aborted", "AbortError"))
+        })
+      })
+    })
+
+    const warnings = []
+    mock.method(console, "warn", (msg) => warnings.push(msg))
+
+    const result = await plugin(null, { provider: "test", timeout: 50 })
+    const config = makeConfig("test")
+    await result.config(config)
+
+    assert.ok(warnings.some((w) => w.includes("failed to sync")))
+  })
+
+  function makeCacheConfig(providerId, overrides = {}) {
+    return {
+      provider: {
+        [providerId]: {
+          options: {
+            baseURL: `https://${providerId}.example.com/v1`,
+            apiKey: "sk-default",
+            ...overrides.options,
+          },
+        },
+      },
+    }
+  }
+
+  it("caches models when cacheTTL is set", async () => {
+    let fetchCount = 0
+    const fetchMock = mockFetch()
+    globalThis.fetch.mock.mockImplementation(() => {
+      fetchCount++
+      return fetchMock()
+    })
+
+    const result = await plugin(null, { provider: "cache-test", cacheTTL: 60000 })
+    const config = makeCacheConfig("cache-test")
+    await result.config(config)
+    assert.equal(fetchCount, 1)
+    assert.ok(config.provider["cache-test"].models["gpt-4o"])
+
+    const config2 = makeCacheConfig("cache-test")
+    await result.config(config2)
+    assert.equal(fetchCount, 1)
+    assert.ok(config2.provider["cache-test"].models["gpt-4o"])
+  })
+
+  it("cache miss when cacheTTL expires", async () => {
+    let fetchCount = 0
+    const fetchMock = mockFetch()
+    globalThis.fetch.mock.mockImplementation(() => {
+      fetchCount++
+      return fetchMock()
+    })
+
+    const result = await plugin(null, { provider: "cache-expire", cacheTTL: 5 })
+    const config = makeCacheConfig("cache-expire")
+    await result.config(config)
+    assert.equal(fetchCount, 1)
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    const config2 = makeCacheConfig("cache-expire")
+    await result.config(config2)
+    assert.equal(fetchCount, 2)
+  })
+
+  it("does not cache when cacheTTL is 0", async () => {
+    let fetchCount = 0
+    const fetchMock = mockFetch()
+    globalThis.fetch.mock.mockImplementation(() => {
+      fetchCount++
+      return fetchMock()
+    })
+
+    const result = await plugin(null, { provider: "no-cache" })
+    const config = makeCacheConfig("no-cache")
+    await result.config(config)
+    assert.equal(fetchCount, 1)
+
+    const config2 = makeCacheConfig("no-cache")
+    await result.config(config2)
+    assert.equal(fetchCount, 2)
+  })
+
   it("derives reasoning flag for known reasoning models", async () => {
     const fetchMock = mockFetch(200, {
       data: [

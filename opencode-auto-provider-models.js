@@ -12,6 +12,24 @@
 
 const DEFAULT_INPUT_MODALITIES = ["text"]
 const DEFAULT_OUTPUT_MODALITIES = ["text"]
+const DEFAULT_TIMEOUT = 5000
+
+const modelCache = new Map()
+
+function getCacheKey(baseURL, apiKey) {
+  return `${baseURL}|${apiKey || ""}`
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    return response
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function normalizeBaseUrl(baseURL) {
   if (typeof baseURL !== "string" || !baseURL.trim()) return null
@@ -107,11 +125,11 @@ function getApiKey(options, perProviderOpts, globalOpts) {
   return null
 }
 
-async function fetchRemoteModels(baseURL, apiKey) {
+async function fetchRemoteModels(baseURL, apiKey, timeoutMs) {
   const headers = { "content-type": "application/json" }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
 
-  const response = await fetch(`${baseURL}/models`, { headers })
+  const response = await fetchWithTimeout(`${baseURL}/models`, { headers }, timeoutMs)
   if (!response.ok) {
     throw new Error(`request failed with status ${response.status}`)
   }
@@ -173,12 +191,23 @@ async function syncProvider(config, providerEntry, globalOpts) {
     return
   }
 
+  const timeoutMs = Number.isFinite(globalOpts.timeout) ? globalOpts.timeout : DEFAULT_TIMEOUT
+  const cacheTTL = Number.isFinite(globalOpts.cacheTTL) ? globalOpts.cacheTTL : 0
+
   const existingModels =
     providerConfig.models && typeof providerConfig.models === "object" ? providerConfig.models : {}
 
   try {
     const apiKey = getApiKey(providerConfig.options, providerEntry, globalOpts)
-    const remoteModels = await fetchRemoteModels(baseURL, apiKey)
+
+    const cacheKey = getCacheKey(baseURL, apiKey)
+    const cached = cacheTTL > 0 ? modelCache.get(cacheKey) : null
+    if (cached && Date.now() - cached.timestamp < cacheTTL) {
+      providerConfig.models = cached.models
+      return
+    }
+
+    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
     const nextModels = { ...existingModels }
 
     for (const remoteModel of remoteModels) {
@@ -188,6 +217,10 @@ async function syncProvider(config, providerEntry, globalOpts) {
     }
 
     providerConfig.models = nextModels
+
+    if (cacheTTL > 0) {
+      modelCache.set(cacheKey, { timestamp: Date.now(), models: nextModels })
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.warn(`[auto-provider-models] failed to sync models for ${providerId}: ${message}`)
