@@ -555,3 +555,17 @@ describe("integration with real HTTP servers", () => {
     assert.ok(config.provider["provider-a"].models["claude-3-opus"])
   })
 })
+
+// ---- provider hook not returned ----
+
+describe("provider hook", () => {
+  it("is not returned for single provider", async () => {
+    const result = await plugin(null, { provider: "test" })
+    assert.equal(result.provider, undefined)
+  })
+
+  it("is not returned for multiple providers", async () => {
+    const result = await plugin(null, { provider: ["a", "b"] })
+    assert.equal(result.provider, undefined)
+  })
+})

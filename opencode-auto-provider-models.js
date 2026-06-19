@@ -20,17 +20,6 @@ function getCacheKey(baseURL, apiKey) {
   return `${baseURL}|${apiKey || ""}`
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal })
-    return response
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 function normalizeBaseUrl(baseURL) {
   if (typeof baseURL !== "string" || !baseURL.trim()) return null
   return baseURL.replace(/\/+$/, "")
@@ -128,18 +117,37 @@ function getApiKey(options, perProviderOpts, globalOpts) {
 async function fetchRemoteModels(baseURL, apiKey, timeoutMs) {
   const headers = { "content-type": "application/json" }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
+  const reqUrl = `${baseURL}/models`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-  const response = await fetchWithTimeout(`${baseURL}/models`, { headers }, timeoutMs)
-  if (!response.ok) {
-    throw new Error(`request failed with status ${response.status}`)
+  try {
+    const response = await fetch(reqUrl, { headers, signal: controller.signal })
+    clearTimeout(timer)
+
+    if (!response.ok) {
+      console.error(`[auto-provider-models] request failed: HTTP ${response.status} ${response.statusText} for ${reqUrl}`)
+      throw new Error(`request failed with status ${response.status}`)
+    }
+
+    const payload = await response.json()
+    if (!Array.isArray(payload?.data)) {
+      console.error(`[auto-provider-models] invalid response body for ${reqUrl}: ${JSON.stringify(payload).slice(0, 200)}`)
+      throw new Error("response is not an OpenAI-compatible models payload")
+    }
+
+    return payload.data
+  } catch (error) {
+    clearTimeout(timer)
+    if (error.name === "AbortError") {
+      console.error(`[auto-provider-models] timeout after ${timeoutMs}ms for ${reqUrl}`)
+      throw new Error(`timeout after ${timeoutMs}ms`)
+    }
+    if (error instanceof TypeError) {
+      console.error(`[auto-provider-models] network error for ${reqUrl}: ${error.message}`)
+    }
+    throw error
   }
-
-  const payload = await response.json()
-  if (!Array.isArray(payload?.data)) {
-    throw new Error("response is not an OpenAI-compatible models payload")
-  }
-
-  return payload.data
 }
 
 function shouldKeepModel(modelId, pluginOptions) {

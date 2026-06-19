@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2026-06-19
+
+- refactor: inline `fetchWithTimeout` to reduce indirection and add structured logging with `[auto-provider-models]` prefix
+- add: error logging for HTTP errors, timeouts, network errors, and invalid response bodies
+- test: add test coverage for provider hook not returned in single/multi-provider mode
+
 ## [0.1.6] - 2026-05-27
 
 - add configurable `timeout` (default 5000ms) to prevent slow provider from blocking startup
