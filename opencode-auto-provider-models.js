@@ -12,9 +12,11 @@
 
 const DEFAULT_INPUT_MODALITIES = ["text"]
 const DEFAULT_OUTPUT_MODALITIES = ["text"]
-const DEFAULT_TIMEOUT = 5000
+const DEFAULT_TIMEOUT = 1000
+const DEFAULT_STARTUP_TIMEOUT = 3000
 
 const modelCache = new Map()
+const inflightRequests = new Map()
 
 function getCacheKey(baseURL, apiKey) {
   return `${baseURL}|${apiKey || ""}`
@@ -115,39 +117,55 @@ function getApiKey(options, perProviderOpts, globalOpts) {
 }
 
 async function fetchRemoteModels(baseURL, apiKey, timeoutMs) {
-  const headers = { "content-type": "application/json" }
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`
-  const reqUrl = `${baseURL}/models`
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const cacheKey = getCacheKey(baseURL, apiKey)
 
-  try {
-    const response = await fetch(reqUrl, { headers, signal: controller.signal })
-    clearTimeout(timer)
+  const inflight = inflightRequests.get(cacheKey)
+  if (inflight) return inflight
 
-    if (!response.ok) {
-      console.error(`[auto-provider-models] request failed: HTTP ${response.status} ${response.statusText} for ${reqUrl}`)
-      throw new Error(`request failed with status ${response.status}`)
-    }
+  const promise = (async () => {
+    const headers = { "content-type": "application/json" }
+    if (apiKey) headers.authorization = `Bearer ${apiKey}`
+    const reqUrl = `${baseURL}/models`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-    const payload = await response.json()
-    if (!Array.isArray(payload?.data)) {
-      console.error(`[auto-provider-models] invalid response body for ${reqUrl}: ${JSON.stringify(payload).slice(0, 200)}`)
-      throw new Error("response is not an OpenAI-compatible models payload")
-    }
+    try {
+      const response = await fetch(reqUrl, { headers, signal: controller.signal })
+      clearTimeout(timer)
 
-    return payload.data
-  } catch (error) {
-    clearTimeout(timer)
-    if (error.name === "AbortError") {
-      console.error(`[auto-provider-models] timeout after ${timeoutMs}ms for ${reqUrl}`)
-      throw new Error(`timeout after ${timeoutMs}ms`)
+      if (!response.ok) {
+        console.error(`[auto-provider-models] request failed: HTTP ${response.status} ${response.statusText} for ${reqUrl}`)
+        throw new Error(`request failed with status ${response.status}`)
+      }
+
+      const payload = await response.json()
+      if (!Array.isArray(payload?.data)) {
+        console.error(`[auto-provider-models] invalid response body for ${reqUrl}: ${JSON.stringify(payload).slice(0, 200)}`)
+        throw new Error("response is not an OpenAI-compatible models payload")
+      }
+
+      return payload.data
+    } catch (error) {
+      clearTimeout(timer)
+      if (error.name === "AbortError") {
+        console.error(`[auto-provider-models] timeout after ${timeoutMs}ms for ${reqUrl}`)
+        throw new Error(`timeout after ${timeoutMs}ms`)
+      }
+      if (error instanceof TypeError) {
+        console.error(`[auto-provider-models] network error for ${reqUrl}: ${error.message}`)
+      }
+      throw error
     }
-    if (error instanceof TypeError) {
-      console.error(`[auto-provider-models] network error for ${reqUrl}: ${error.message}`)
+  })()
+
+  const result = promise.finally(() => {
+    if (inflightRequests.get(cacheKey) === result) {
+      inflightRequests.delete(cacheKey)
     }
-    throw error
-  }
+  })
+
+  inflightRequests.set(cacheKey, result)
+  return result
 }
 
 function shouldKeepModel(modelId, pluginOptions) {
@@ -248,7 +266,22 @@ export default async function autoProviderModelsPlugin(_input, pluginOptions = {
         .map(normalizeProviderEntry)
         .filter((e) => e !== null)
 
-      await Promise.all(entries.map((entry) => syncProvider(config, entry, pluginOptions)))
+      const startupTimeout = Number.isFinite(pluginOptions.startupTimeout)
+        ? pluginOptions.startupTimeout
+        : DEFAULT_STARTUP_TIMEOUT
+
+      const syncPromise = Promise.all(
+        entries.map((entry) => syncProvider(config, entry, pluginOptions))
+      )
+
+      const overallTimer = new Promise((resolve) => {
+        setTimeout(() => {
+          console.warn(`[auto-provider-models] startup timed out after ${startupTimeout}ms, models may be incomplete`)
+          resolve()
+        }, startupTimeout)
+      })
+
+      await Promise.race([syncPromise, overallTimer])
     },
   }
 }

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8] - 2026-06-19
+
+- fix: reduce `DEFAULT_TIMEOUT` from 5000ms to 1000ms to speed up startup when provider is unreachable
+- fix: add overall startup timeout (`DEFAULT_STARTUP_TIMEOUT` 3000ms, configurable via `startupTimeout`) to prevent config hook from blocking UI
+- feat: deduplicate concurrent `/models` requests for same `(baseURL, apiKey)` to avoid redundant network calls
+
 ## [0.1.7] - 2026-06-19
 
 - refactor: inline `fetchWithTimeout` to reduce indirection and add structured logging with `[auto-provider-models]` prefix
