@@ -166,6 +166,33 @@ The plugin sends an HTTP request to `${baseURL}/models` for each provider on eve
 | `timeout` | `5000` | Max wait (ms) for the `/models` response. Prevents a slow or hung provider from blocking startup. |
 | `cacheTTL` | `0` | How long (ms) to reuse the last fetched model list without re-requesting. Set to `300000` (5 min) to skip the request on most restarts. `0` disables caching. |
 
+## Model enrichment (optional)
+
+The plugin can fetch supplemental metadata from `https://models.dev/models.json` and fill in missing fields for each model entry. This is optional and disabled by default.
+
+To enable it:
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": "custom-provider",
+        "enrich": true
+      }
+    ]
+  ]
+}
+```
+
+When enabled, the plugin:
+1. Requests `https://models.dev/models.json` at startup
+2. Matches model IDs from the remote provider against the enrichment data (exact match -> suffix match -> tail match)
+3. For matched models, fills in missing fields: `name`, `description`, `family`, `reasoning`, `attachment`, `tool_call`, `structured_output`, `temperature`, `knowledge`, `open_weights`, `release_date`, `last_updated`, `modalities`, `limit`
+
+If the models.dev request fails, the plugin only logs a warning and proceeds with normal model sync.
+
 ## Remote Response Shape
 
 The plugin reads the standard OpenAI-compatible format:

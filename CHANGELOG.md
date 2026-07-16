@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.9] - 2026-07-16
+
+- feat: add optional model enrichment from `https://models.dev/models.json` (configurable via `enrich` option, disabled by default)
+- refactor: `enrichment.js` now exports `fetchAndBuildEnrichCache()` + `lookupEnrichment()` for batch processing
+- test: add 4 test cases for enrich enable/disable/failure/override behavior
+- docs: add enrichment configuration to README (EN and ZH)
+
 ## [0.1.8] - 2026-06-19
 
 - fix: reduce `DEFAULT_TIMEOUT` from 5000ms to 1000ms to speed up startup when provider is unreachable

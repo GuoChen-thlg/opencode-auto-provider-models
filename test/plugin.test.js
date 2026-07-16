@@ -412,6 +412,119 @@ describe("plugin entry", () => {
     assert.equal(config.provider.test.models["glm-5"].reasoning, true)
     assert.equal(config.provider.test.models["gpt-4o"].reasoning, undefined)
   })
+
+  it("enrich fills missing fields from models.dev when enabled", async () => {
+    const ENRICH_PAYLOAD = {
+      "gpt-4o": {
+        id: "gpt-4o",
+        description: "Most capable GPT-4 model",
+        family: "gpt-4",
+        reasoning: false,
+        tool_call: true,
+        structured_output: true,
+        knowledge: "2024-01",
+        open_weights: false,
+      },
+      "deepseek-chat": {
+        id: "deepseek-chat",
+        description: "DeepSeek chat model",
+        family: "deepseek",
+        reasoning: false,
+        tool_call: true,
+      },
+    }
+
+    let fetchCount = 0
+    globalThis.fetch.mock.mockImplementation(async (url) => {
+      fetchCount++
+      if (url === "https://models.dev/models.json") {
+        return { ok: true, status: 200, json: async () => ENRICH_PAYLOAD }
+      }
+      return mockFetch()()
+    })
+
+    const result = await plugin(null, { provider: "test", enrich: true })
+    const config = makeConfig("test")
+    await result.config(config)
+
+    assert.equal(fetchCount, 2)
+    // fields from remote
+    assert.equal(config.provider.test.models["gpt-4o"].name, "GPT-4o")
+    assert.equal(config.provider.test.models["gpt-4o"].modalities.input.length, 1)
+    // fields filled by enrich
+    assert.equal(config.provider.test.models["gpt-4o"].description, "Most capable GPT-4 model")
+    assert.equal(config.provider.test.models["gpt-4o"].family, "gpt-4")
+    assert.equal(config.provider.test.models["gpt-4o"].tool_call, true)
+    assert.equal(config.provider.test.models["gpt-4o"].structured_output, true)
+    // deepseek-chat also enriched
+    assert.equal(config.provider.test.models["deepseek-chat"].description, "DeepSeek chat model")
+    assert.equal(config.provider.test.models["deepseek-chat"].family, "deepseek")
+  })
+
+  it("enrich does not override existing fields", async () => {
+    const ENRICH_PAYLOAD = {
+      "gpt-4o": {
+        id: "gpt-4o",
+        name: "enrich-name-should-not-appear",
+        description: "enrich description",
+      },
+    }
+
+    globalThis.fetch.mock.mockImplementation(async (url) => {
+      if (url === "https://models.dev/models.json") {
+        return { ok: true, status: 200, json: async () => ENRICH_PAYLOAD }
+      }
+      return mockFetch()()
+    })
+
+    const result = await plugin(null, { provider: "test", enrich: true })
+    const config = makeConfig("test", {
+      models: {
+        "gpt-4o": { name: "local-name" },
+      },
+    })
+    await result.config(config)
+
+    // local name should win over enrich
+    assert.equal(config.provider.test.models["gpt-4o"].name, "local-name")
+    // enrich should fill missing fields
+    assert.equal(config.provider.test.models["gpt-4o"].description, "enrich description")
+  })
+
+  it("enrich failure does not block model sync", async () => {
+    let fetchCall = 0
+    globalThis.fetch.mock.mockImplementation(async (url) => {
+      fetchCall++
+      if (url === "https://models.dev/models.json") {
+        return { ok: false, status: 500, json: async () => ({}) }
+      }
+      return mockFetch()()
+    })
+
+    const warnings = []
+    mock.method(console, "warn", (msg) => warnings.push(msg))
+
+    const result = await plugin(null, { provider: "test", enrich: true })
+    const config = makeConfig("test")
+    await result.config(config)
+
+    assert.ok(config.provider.test.models["gpt-4o"])
+    assert.equal(config.provider.test.models["gpt-4o"].name, "GPT-4o")
+    assert.ok(warnings.some((w) => w.includes("enrich fetch failed")))
+  })
+
+  it("enrich is disabled by default", async () => {
+    const fetchMock = mockFetch()
+    globalThis.fetch.mock.mockImplementation(() => fetchMock())
+
+    const result = await plugin(null, { provider: "test" })
+    const config = makeConfig("test")
+    await result.config(config)
+
+    // should have basic fields but no enrich fields
+    assert.equal(config.provider.test.models["gpt-4o"].name, "GPT-4o")
+    assert.equal(config.provider.test.models["gpt-4o"].description, undefined)
+  })
 })
 
 // ---- integration tests (real HTTP servers) ----

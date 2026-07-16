@@ -166,6 +166,33 @@ npm install guochen-thlg/opencode-auto-provider-models
 | `timeout` | `5000` | 等待 `/models` 响应的最长时间（毫秒）。防止慢响应或不可用的 provider 阻塞启动。 |
 | `cacheTTL` | `0` | 复用上次拉取的模型列表的时间（毫秒）。设为 `300000`（5 分钟）可在大部分重启时跳过请求。`0` 表示不缓存。 |
 
+## 模型增强（可选）
+
+插件可以额外从 `https://models.dev/models.json` 获取模型的补充元数据（如描述、家族、能力等），并自动填充到模型条目中缺失的字段。
+
+这是一个可选功能，默认关闭。启用方式：
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": "custom-provider",
+        "enrich": true
+      }
+    ]
+  ]
+}
+```
+
+启用后，插件会：
+1. 启动时请求 `https://models.dev/models.json`
+2. 将返回的元数据与远程 provider 返回的模型 ID 进行匹配（精确匹配 -> 后缀匹配 -> 尾部匹配）
+3. 对匹配到的模型，补充以下缺失字段：`name`, `description`, `family`, `reasoning`, `attachment`, `tool_call`, `structured_output`, `temperature`, `knowledge`, `open_weights`, `release_date`, `last_updated`, `modalities`, `limit`
+
+如果 models.dev 请求失败，插件只会打印警告，不影响正常模型同步。
+
 ## 远端返回格式
 
 插件按 OpenAI 兼容格式读取：

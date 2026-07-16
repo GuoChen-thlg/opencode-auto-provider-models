@@ -8,7 +8,15 @@
  *
  * `provider` accepts a single ID string or an array of ID strings / config
  * objects `{ id, baseURL?, apiKey?, apiKeyEnv? }`.
+ *
+ * When `enrich` is enabled (default: false), the plugin fetches
+ * https://models.dev/models.json and fills in missing fields (name,
+ * description, family, reasoning, attachment, tool_call,
+ * structured_output, temperature, knowledge, open_weights,
+ * release_date, last_updated, modalities, limit) from the matched entry.
  */
+
+import { fetchAndBuildEnrichCache, lookupEnrichment, resetCache as resetEnrichCache } from "./enrichment.js"
 
 const DEFAULT_INPUT_MODALITIES = ["text"]
 const DEFAULT_OUTPUT_MODALITIES = ["text"]
@@ -85,7 +93,7 @@ function toDisplayName(modelId, remoteModel) {
   return modelId
 }
 
-function buildModelEntry(modelId, remoteModel, existingEntry) {
+function buildModelEntry(modelId, remoteModel, existingEntry, enrichCache) {
   const generated = {
     name: toDisplayName(modelId, remoteModel),
     modalities: deriveModalities(remoteModel),
@@ -93,14 +101,41 @@ function buildModelEntry(modelId, remoteModel, existingEntry) {
     ...(deriveLimit(remoteModel) ? { limit: deriveLimit(remoteModel) } : {}),
   }
 
-  if (!existingEntry || typeof existingEntry !== "object") return generated
+  if (!existingEntry || typeof existingEntry !== "object") {
+    if (enrichCache) {
+      return applyEnrichmentSync(modelId, generated, enrichCache)
+    }
+    return generated
+  }
 
-  return {
+  const merged = {
     ...generated,
     ...existingEntry,
     modalities: existingEntry.modalities || generated.modalities,
     limit: existingEntry.limit || generated.limit,
   }
+
+  if (enrichCache) {
+    return applyEnrichmentSync(modelId, merged, enrichCache)
+  }
+
+  return merged
+}
+
+function applyEnrichmentSync(modelId, entry, enrichCache) {
+  if (!enrichCache) return entry
+
+  const matched = lookupEnrichment(modelId)
+  if (!matched) return entry
+
+  const result = { ...entry }
+  for (const [key, value] of Object.entries(matched)) {
+    if (result[key] === undefined || result[key] === null) {
+      result[key] = JSON.parse(JSON.stringify(value))
+    }
+  }
+
+  return result
 }
 
 function getApiKey(options, perProviderOpts, globalOpts) {
@@ -233,13 +268,21 @@ async function syncProvider(config, providerEntry, globalOpts) {
       return
     }
 
+    // Optionally build enrich cache from models.dev
+    let enrichCache = null
+    if (globalOpts.enrich) {
+      enrichCache = await fetchAndBuildEnrichCache({
+        onError: (msg) => console.warn(`[auto-provider-models] enrich fetch failed: ${msg}`),
+      })
+    }
+
     const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
     const nextModels = { ...existingModels }
 
     for (const remoteModel of remoteModels) {
       const modelId = normalizeModelId(remoteModel?.id)
       if (!modelId || !shouldKeepModel(modelId, globalOpts)) continue
-      nextModels[modelId] = buildModelEntry(modelId, remoteModel, existingModels[modelId])
+      nextModels[modelId] = buildModelEntry(modelId, remoteModel, existingModels[modelId], enrichCache)
     }
 
     providerConfig.models = nextModels
