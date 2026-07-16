@@ -230,19 +230,11 @@ npm install guochen-thlg/opencode-auto-provider-models
 发布新版本到 GitHub Packages 的步骤：
 
 1. 更新 `package.json` 里的 `version`
-2. 提交并推送本次发布相关改动
-3. 发布包：
-
-```bash
-npm publish --registry=https://npm.pkg.github.com
-```
-
-4. 创建并推送对应版本标签：
+2. 更新 `CHANGELOG.md`
+3. 提交并推送改动到 `main`
+4. 创建并推送版本标签（会自动触发 GitHub Actions 创建 release + 发布包）：
 
 ```bash
 git tag -a v<version> -m "v<version>"
 git push origin v<version>
 ```
-
-5. 为同一个 tag 创建 GitHub release
-6. 如果仓库 workflow 已启用，发布 release 时也可以触发自动发布 GitHub Packages 的任务

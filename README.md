@@ -230,19 +230,11 @@ If the remote endpoint also returns the following fields, the plugin maps them w
 To publish a new version to GitHub Packages:
 
 1. Update `version` in `package.json`
-2. Commit and push the release changes
-3. Publish the package:
-
-```bash
-npm publish --registry=https://npm.pkg.github.com
-```
-
-4. Create and push the version tag:
+2. Update `CHANGELOG.md`
+3. Commit and push changes to `main`
+4. Create and push the version tag (automatically triggers GitHub Actions to create a release + publish the package):
 
 ```bash
 git tag -a v<version> -m "v<version>"
 git push origin v<version>
 ```
-
-5. Create a GitHub release for the same tag
-6. If the repository workflow is enabled, publishing the release can also trigger the automated GitHub Packages publish job
