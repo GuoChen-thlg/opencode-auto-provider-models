@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.10] - 2026-07-16
+
+- fix: include `enrichment.js` in package files so ESM import resolves correctly
+
 ## [0.1.9] - 2026-07-16
 
 - feat: add optional model enrichment from `https://models.dev/models.json` (configurable via `enrich` option, disabled by default)
