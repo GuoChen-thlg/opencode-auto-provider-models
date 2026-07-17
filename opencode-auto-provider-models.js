@@ -132,10 +132,29 @@ function applyEnrichmentSync(modelId, entry, enrichCache) {
   for (const [key, value] of Object.entries(matched)) {
     if (result[key] === undefined || result[key] === null) {
       result[key] = JSON.parse(JSON.stringify(value))
+    } else if (key === "name" && result.name === modelId) {
+      result.name = JSON.parse(JSON.stringify(value))
+    } else if (key === "modalities" && isDefaultModalities(result.modalities)) {
+      result.modalities = JSON.parse(JSON.stringify(value))
+    } else if (key === "limit" && isDefaultLimit(result.limit)) {
+      result.limit = JSON.parse(JSON.stringify(value))
     }
   }
 
   return result
+}
+
+function isDefaultModalities(mod) {
+  if (!mod || typeof mod !== "object") return true
+  const { input, output } = mod
+  return (
+    (!input || (input.length === 1 && input[0] === "text")) &&
+    (!output || (output.length === 1 && output[0] === "text"))
+  )
+}
+
+function isDefaultLimit(limit) {
+  return !limit || typeof limit !== "object" || Object.keys(limit).length === 0
 }
 
 function getApiKey(options, perProviderOpts, globalOpts) {

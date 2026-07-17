@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.11] - 2026-07-16
+
+- fix: include suffix keys in enrich cache for provider/org model ID matching
+- fix: enrich name overrides modelId fallback when remote lacks name field
+- fix: enrich modalities/limit overrides plugin defaults when remote lacks them
+- test: add suffix matching test with xiaomi mimo models
+
 ## [0.1.10] - 2026-07-16
 
 - fix: include `enrichment.js` in package files so ESM import resolves correctly

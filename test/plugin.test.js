@@ -525,6 +525,96 @@ describe("plugin entry", () => {
     assert.equal(config.provider.test.models["gpt-4o"].name, "GPT-4o")
     assert.equal(config.provider.test.models["gpt-4o"].description, undefined)
   })
+
+  it("enrich matches mimo models via suffix lookup", async () => {
+    const ENRICH_PAYLOAD = {
+      "xiaomi/mimo-v2.5": {
+        id: "xiaomi/mimo-v2.5",
+        name: "MiMo-V2.5",
+        description: "Open MiMo model for multimodal coding agents and long-context automation",
+        family: "mimo",
+        reasoning: true,
+        tool_call: true,
+        attachment: true,
+        modalities: { input: ["text", "image", "audio", "video"], output: ["text"] },
+        limit: { context: 1048576, output: 131072 },
+      },
+      "xiaomi/mimo-v2.5-pro": {
+        id: "xiaomi/mimo-v2.5-pro",
+        name: "MiMo-V2.5-Pro",
+        description: "Stronger MiMo Pro tier for multimodal reasoning and coding-agent execution",
+        family: "mimo",
+        reasoning: true,
+        tool_call: true,
+        limit: { context: 1048576, output: 131072 },
+      },
+      "xiaomi/mimo-v2.5-pro-ultraspeed": {
+        id: "xiaomi/mimo-v2.5-pro-ultraspeed",
+        name: "MiMo-V2.5-Pro-UltraSpeed",
+        description: "MiMo pro model for strong multimodal reasoning and agent execution",
+        family: "mimo",
+        reasoning: true,
+        tool_call: true,
+        limit: { context: 1048576, output: 131072 },
+      },
+    }
+
+    const MIMO_PAYLOAD = {
+      data: [
+        { id: "mimo-v2.5", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-asr", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-pro", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-pro-ultraspeed", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-tts", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-tts-voiceclone", object: "model", owned_by: "xiaomi" },
+        { id: "mimo-v2.5-tts-voicedesign", object: "model", owned_by: "xiaomi" },
+      ],
+    }
+
+    let fetchCount = 0
+    globalThis.fetch.mock.mockImplementation(async (url) => {
+      fetchCount++
+      if (url === "https://models.dev/models.json") {
+        return { ok: true, status: 200, json: async () => ENRICH_PAYLOAD }
+      }
+      return mockFetch(200, MIMO_PAYLOAD)()
+    })
+
+    const result = await plugin(null, { provider: "test", enrich: true })
+    const config = makeConfig("test")
+    await result.config(config)
+
+    const models = config.provider.test.models
+
+    // mimo-v2.5: suffix match "mimo-v2.5" against "xiaomi/mimo-v2.5"
+    assert.equal(models["mimo-v2.5"].name, "MiMo-V2.5")
+    assert.equal(models["mimo-v2.5"].description, "Open MiMo model for multimodal coding agents and long-context automation")
+    assert.equal(models["mimo-v2.5"].family, "mimo")
+    assert.equal(models["mimo-v2.5"].reasoning, true)
+    assert.equal(models["mimo-v2.5"].tool_call, true)
+    assert.equal(models["mimo-v2.5"].attachment, true)
+    assert.deepEqual(models["mimo-v2.5"].modalities, { input: ["text", "image", "audio", "video"], output: ["text"] })
+    assert.deepEqual(models["mimo-v2.5"].limit, { context: 1048576, output: 131072 })
+
+    // mimo-v2.5-pro: suffix match
+    assert.equal(models["mimo-v2.5-pro"].name, "MiMo-V2.5-Pro")
+    assert.equal(models["mimo-v2.5-pro"].description, "Stronger MiMo Pro tier for multimodal reasoning and coding-agent execution")
+    assert.equal(models["mimo-v2.5-pro"].family, "mimo")
+    assert.deepEqual(models["mimo-v2.5-pro"].limit, { context: 1048576, output: 131072 })
+
+    // mimo-v2.5-pro-ultraspeed: suffix match
+    assert.equal(models["mimo-v2.5-pro-ultraspeed"].name, "MiMo-V2.5-Pro-UltraSpeed")
+    assert.equal(models["mimo-v2.5-pro-ultraspeed"].description, "MiMo pro model for strong multimodal reasoning and agent execution")
+
+    // mimo-v2.5-asr: no match in enrich data, only remote fields
+    assert.equal(models["mimo-v2.5-asr"].name, "mimo-v2.5-asr")
+    assert.equal(models["mimo-v2.5-asr"].description, undefined)
+    assert.equal(models["mimo-v2.5-asr"].family, undefined)
+
+    // mimo-v2.5-tts: no match
+    assert.equal(models["mimo-v2.5-tts"].name, "mimo-v2.5-tts")
+    assert.equal(models["mimo-v2.5-tts"].description, undefined)
+  })
 })
 
 // ---- integration tests (real HTTP servers) ----

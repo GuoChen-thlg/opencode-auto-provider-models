@@ -85,10 +85,22 @@ export async function fetchAndBuildEnrichCache(options = {}) {
     const index = buildModelIdIndex(data)
     const cache = new Map()
 
+    const seen = new Set()
+
     for (const modelId of index.byExact.keys()) {
+      const matched = matchModelId(modelId, index)
+      if (matched && !seen.has(modelId)) {
+        cache.set(modelId, pickEnrichFields(matched, fields))
+        seen.add(modelId)
+      }
+    }
+
+    for (const modelId of index.bySuffix.keys()) {
+      if (seen.has(modelId)) continue
       const matched = matchModelId(modelId, index)
       if (matched) {
         cache.set(modelId, pickEnrichFields(matched, fields))
+        seen.add(modelId)
       }
     }
 
