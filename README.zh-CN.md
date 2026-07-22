@@ -28,13 +28,24 @@
 
 - `opencode-auto-provider-models.js`: 插件实现
 
-## 配置方式
+## 安装
 
-从 GitHub 直接安装：
+在 opencode 项目中安装本包：
 
 ```bash
+# 从 GitHub Packages（需要 ~/.npmrc 作用域 registry 配置）：
+#   @guochen-thlg:registry=https://npm.pkg.github.com
+npm install @guochen-thlg/opencode-auto-provider-models
+bun install @guochen-thlg/opencode-auto-provider-models
+
+# 或者从 GitHub 直接安装（无需 registry 配置）：
 npm install guochen-thlg/opencode-auto-provider-models
+bun install guochen-thlg/opencode-auto-provider-models
 ```
+
+然后在 `opencode.jsonc` 中添加插件配置。
+
+## 配置方式
 
 ### 单个供应商
 

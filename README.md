@@ -28,15 +28,26 @@ If the remote request fails, the plugin only prints a warning and does not block
 
 - `opencode-auto-provider-models.js`: plugin implementation
 
-## Configuration
+## Installation
 
-Install directly from GitHub:
+Install the package in your opencode project:
 
 ```bash
+# From GitHub Packages (requires ~/.npmrc scoped registry):
+#   @guochen-thlg:registry=https://npm.pkg.github.com
+npm install @guochen-thlg/opencode-auto-provider-models
+bun install @guochen-thlg/opencode-auto-provider-models
+
+# Or directly from GitHub (no registry setup needed):
 npm install guochen-thlg/opencode-auto-provider-models
+bun install guochen-thlg/opencode-auto-provider-models
 ```
 
-## Single provider
+Then add the plugin to your `opencode.jsonc`.
+
+## Configuration
+
+### Single provider
 
 ```jsonc
 {
@@ -52,7 +63,7 @@ npm install guochen-thlg/opencode-auto-provider-models
 }
 ```
 
-## Multiple providers
+### Multiple providers
 
 Pass an array to `provider`:
 
@@ -90,7 +101,7 @@ Each entry can also be an object for per-provider overrides (e.g. a different `a
 }
 ```
 
-## Filter models
+### Filter models
 
 If you only want to sync part of the remote model list:
 
@@ -124,7 +135,7 @@ If you only want to sync part of the remote model list:
 }
 ```
 
-## API key
+### API key
 
 If the provider's `options.apiKey` is not the final key to use, you can explicitly point the plugin to an environment variable:
 
