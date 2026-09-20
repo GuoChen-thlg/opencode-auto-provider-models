@@ -199,6 +199,11 @@ function buildV2ModelPatch(modelId, remoteModel, existingInfo, enrichCache) {
     },
   }
 
+  // 如果远程 model ID 与 OpenCode model ID 不同，设置 modelID
+  if (remoteModel?.id && remoteModel.id !== modelId) {
+    patch.modelID = remoteModel.id
+  }
+
   const limit = deriveLimit(remoteModel)
   if (limit) patch.limit = limit
 
@@ -206,6 +211,7 @@ function buildV2ModelPatch(modelId, remoteModel, existingInfo, enrichCache) {
 
   if (existingInfo && typeof existingInfo === "object") {
     if (existingInfo.name) result.name = existingInfo.name
+    if (existingInfo.modelID) result.modelID = existingInfo.modelID
     if (existingInfo.capabilities) result.capabilities = existingInfo.capabilities
     if (existingInfo.limit) result.limit = existingInfo.limit
     if (existingInfo.family) result.family = existingInfo.family
