@@ -26,7 +26,7 @@ If the remote request fails, the plugin only prints a warning and does not block
 
 ## Files
 
-- `opencode-auto-provider-models.js`: plugin implementation
+- `opencode-auto-provider-models.js`: 同时支持 OpenCode v1 和 v2 的插件实现
 
 ## Installation
 
@@ -44,6 +44,41 @@ bun install guochen-thlg/opencode-auto-provider-models
 ```
 
 Then add the plugin to your `opencode.jsonc`.
+
+## OpenCode v2
+
+OpenCode v2 使用不同的插件 API。插件通过 `plugins` 数组加载：
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@guochen-thlg/opencode-auto-provider-models",
+      "options": {
+        "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+With a local checkout:
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "./opencode-auto-provider-models.js",
+      "options": {
+        "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+插件会读取 provider 的 `settings.baseURL`，通过 `ctx.provider.transform` 注入模型，使用 v2 原生的模型格式（`capabilities.tools`、`capabilities.input`、`capabilities.output`、`limit`、`family`）。
 
 ## Configuration
 

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-09-20
+
+- breaking: 合并 v1 和 v2 到单一入口点，移除 `opencode-auto-provider-models-v2.js`
+- feat: 插件同时支持 OpenCode v1 (`server()`) 和 v2 (`id` + `setup()`)
+- feat: v2 使用新的 `ctx.provider.transform()` API（替代旧的 `ctx.catalog.transform()`）
+- refactor: 共享公共逻辑（fetchRemoteModels、shouldKeepModel 等），减少代码重复
+- test: 更新测试适配新的导出格式
+- docs: 更新 README 文档说明新的使用方式
+
+## [0.1.12] - 2026-08-14
+
+- feat: add OpenCode v2 plugin support via `@guochen-thlg/opencode-auto-provider-models/v2` entrypoint (`opencode-auto-provider-models-v2.js`)
+- feat: v2 entrypoint injects models through `ctx.catalog.transform` + reload using native v2 model shape (`capabilities`/`limit`/`family`)
+- refactor: `provider` entries and options (`enrich`/`timeout`/`cacheTTL`/`startupTimeout`/`include`/`exclude`) behave identically in v1 and v2
+- test: add `test/plugin-v2.test.js` covering entry shape, catalog settings, filters, caching, and enrich mapping
+- docs: add OpenCode v2 setup guide to README (EN and ZH)
+
 ## [0.1.11] - 2026-07-16
 
 - fix: include suffix keys in enrich cache for provider/org model ID matching

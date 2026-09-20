@@ -1,7 +1,10 @@
 import { describe, it, mock, before, after } from "node:test"
 import assert from "node:assert/strict"
 import http from "node:http"
-import plugin from "../opencode-auto-provider-models.js"
+import pluginModule from "../opencode-auto-provider-models.js"
+
+// v1 使用 server() 函数
+const plugin = pluginModule.server
 
 // ---- helpers ----
 

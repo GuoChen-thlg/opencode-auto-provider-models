@@ -26,7 +26,8 @@
 
 ## 文件
 
-- `opencode-auto-provider-models.js`: 插件实现
+- `opencode-auto-provider-models.js`: OpenCode v1 插件实现
+- `opencode-auto-provider-models-v2.js`: OpenCode v2 插件实现（`/v2` 入口）
 
 ## 安装
 
@@ -44,6 +45,47 @@ bun install guochen-thlg/opencode-auto-provider-models
 ```
 
 然后在 `opencode.jsonc` 中添加插件配置。
+
+## OpenCode v2
+
+OpenCode v2 使用全新的插件 API，插件从 `plugins` 数组加载。v2 入口位于
+`@guochen-thlg/opencode-auto-provider-models/v2` 子路径（或本地
+`./opencode-auto-provider-models-v2.js` 文件）：
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@guochen-thlg/opencode-auto-provider-models/v2",
+      "options": {
+        "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+使用本地 checkout：
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "./opencode-auto-provider-models-v2.js",
+      "options": {
+        "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+v2 入口从运行时 catalog 读取 provider 的 `settings.baseURL`，因此已有 v1 风格
+provider（其 `options.baseURL` 会被规范化为 v2 的 `settings`）无需额外配置即可
+工作。下面的所有选项同样适用。模型通过 `ctx.catalog.transform` 注入，写入原生
+v2 模型结构（`capabilities.tools`、`capabilities.input`、`capabilities.output`、
+`limit`、`family`），且已有 catalog 条目始终优先于远端数据。
 
 ## 配置方式
 

@@ -1,19 +1,19 @@
 /**
  * OpenCode plugin: auto-sync models for existing OpenAI-compatible providers.
  *
- * It fetches `${baseURL}/models` at startup for each configured provider and
- * injects the discovered list into `config.provider[providerId].models`.
- * Existing local model definitions are kept and merged so manual metadata
- * still wins when present.
+ * 同时支持 OpenCode v1 和 v2：
+ * - v1 使用 `server()` 函数，通过 config hook 修改配置
+ * - v2 使用 `id` + `setup()` 函数，通过 provider.transform 修改模型
  *
- * `provider` accepts a single ID string or an array of ID strings / config
- * objects `{ id, baseURL?, apiKey?, apiKeyEnv? }`.
+ * 它在启动时为每个配置的 provider 获取 `${baseURL}/models`，
+ * 并将发现的模型列表注入到 provider 的 models 中。
+ * 现有的本地模型定义会被保留和合并，手动维护的元数据优先级更高。
  *
- * When `enrich` is enabled (default: false), the plugin fetches
- * https://models.dev/models.json and fills in missing fields (name,
- * description, family, reasoning, attachment, tool_call,
- * structured_output, temperature, knowledge, open_weights,
- * release_date, last_updated, modalities, limit) from the matched entry.
+ * `provider` 接受单个 ID 字符串或 ID 字符串/配置对象数组
+ * `{ id, baseURL?, apiKey?, apiKeyEnv? }`。
+ *
+ * 当启用 `enrich`（默认：false）时，插件会获取
+ * https://models.dev/models.json 并从匹配的条目填充缺失字段。
  */
 
 import { fetchAndBuildEnrichCache, lookupEnrichment, resetCache as resetEnrichCache } from "./enrichment.js"
@@ -25,6 +25,9 @@ const DEFAULT_STARTUP_TIMEOUT = 3000
 
 const modelCache = new Map()
 const inflightRequests = new Map()
+
+// v2 专用：记录每个 provider 已同步的模型列表
+const syncedModels = new Map()
 
 function getCacheKey(baseURL, apiKey) {
   return `${baseURL}|${apiKey || ""}`
@@ -93,6 +96,16 @@ function toDisplayName(modelId, remoteModel) {
   return modelId
 }
 
+function resolveEnvTemplate(value) {
+  if (typeof value === "string") {
+    const match = value.match(/^\{env:([^}]+)\}$/)
+    if (match) return process.env[match[1]] || undefined
+  }
+  return value
+}
+
+// ---- v1 enrichment ----
+
 function buildModelEntry(modelId, remoteModel, existingEntry, enrichCache) {
   const generated = {
     name: toDisplayName(modelId, remoteModel),
@@ -103,7 +116,7 @@ function buildModelEntry(modelId, remoteModel, existingEntry, enrichCache) {
 
   if (!existingEntry || typeof existingEntry !== "object") {
     if (enrichCache) {
-      return applyEnrichmentSync(modelId, generated, enrichCache)
+      return applyEnrichmentV1(modelId, generated, enrichCache)
     }
     return generated
   }
@@ -116,13 +129,13 @@ function buildModelEntry(modelId, remoteModel, existingEntry, enrichCache) {
   }
 
   if (enrichCache) {
-    return applyEnrichmentSync(modelId, merged, enrichCache)
+    return applyEnrichmentV1(modelId, merged, enrichCache)
   }
 
   return merged
 }
 
-function applyEnrichmentSync(modelId, entry, enrichCache) {
+function applyEnrichmentV1(modelId, entry, enrichCache) {
   if (!enrichCache) return entry
 
   const matched = lookupEnrichment(modelId)
@@ -144,6 +157,65 @@ function applyEnrichmentSync(modelId, entry, enrichCache) {
   return result
 }
 
+// ---- v2 enrichment ----
+
+function applyEnrichmentV2(modelId, patch, enrichCache) {
+  if (!enrichCache) return patch
+  const matched = lookupEnrichment(modelId)
+  if (!matched) return patch
+
+  const result = { ...patch }
+  if ((result.name === undefined || result.name === modelId) && typeof matched.name === "string") {
+    result.name = matched.name
+  }
+  if (typeof matched.family === "string" && !result.family) result.family = matched.family
+
+  result.capabilities = { ...(result.capabilities || { tools: true, input: [], output: [] }) }
+  if (Array.isArray(matched.modalities?.input) && matched.modalities.input.length) {
+    result.capabilities.input = [...matched.modalities.input]
+  }
+  if (Array.isArray(matched.modalities?.output) && matched.modalities.output.length) {
+    result.capabilities.output = [...matched.modalities.output]
+  }
+  if (typeof matched.tool_call === "boolean") result.capabilities.tools = matched.tool_call
+  if (matched.limit && typeof matched.limit === "object") {
+    result.limit = {
+      ...(result.limit || {}),
+      ...(result.limit?.context === undefined ? { context: matched.limit.context } : {}),
+      ...(result.limit?.output === undefined ? { output: matched.limit.output } : {}),
+    }
+  }
+  return result
+}
+
+function buildV2ModelPatch(modelId, remoteModel, existingInfo, enrichCache) {
+  const modalities = deriveModalities(remoteModel)
+  const patch = {
+    name: toDisplayName(modelId, remoteModel),
+    capabilities: {
+      tools: true,
+      input: modalities.input,
+      output: modalities.output,
+    },
+  }
+
+  const limit = deriveLimit(remoteModel)
+  if (limit) patch.limit = limit
+
+  const result = applyEnrichmentV2(modelId, patch, enrichCache)
+
+  if (existingInfo && typeof existingInfo === "object") {
+    if (existingInfo.name) result.name = existingInfo.name
+    if (existingInfo.capabilities) result.capabilities = existingInfo.capabilities
+    if (existingInfo.limit) result.limit = existingInfo.limit
+    if (existingInfo.family) result.family = existingInfo.family
+  }
+
+  return result
+}
+
+// ---- helpers ----
+
 function isDefaultModalities(mod) {
   if (!mod || typeof mod !== "object") return true
   const { input, output } = mod
@@ -158,14 +230,14 @@ function isDefaultLimit(limit) {
 }
 
 function getApiKey(options, perProviderOpts, globalOpts) {
-  const envName = typeof perProviderOpts.apiKeyEnv === "string"
+  const envName = typeof perProviderOpts?.apiKeyEnv === "string"
     ? perProviderOpts.apiKeyEnv
-    : typeof globalOpts.apiKeyEnv === "string"
+    : typeof globalOpts?.apiKeyEnv === "string"
       ? globalOpts.apiKeyEnv
       : null
   if (envName && process.env[envName]) return process.env[envName]
-  if (typeof perProviderOpts.apiKey === "string" && perProviderOpts.apiKey.trim()) return perProviderOpts.apiKey.trim()
-  if (typeof globalOpts.apiKey === "string" && globalOpts.apiKey.trim()) return globalOpts.apiKey.trim()
+  if (typeof perProviderOpts?.apiKey === "string" && perProviderOpts.apiKey.trim()) return perProviderOpts.apiKey.trim()
+  if (typeof globalOpts?.apiKey === "string" && globalOpts.apiKey.trim()) return globalOpts.apiKey.trim()
   if (typeof options?.apiKey === "string" && options.apiKey.trim()) return options.apiKey.trim()
   return null
 }
@@ -256,7 +328,9 @@ function normalizeProviderEntry(entry) {
   return null
 }
 
-async function syncProvider(config, providerEntry, globalOpts) {
+// ---- v1 syncProvider ----
+
+async function syncProviderV1(config, providerEntry, globalOpts) {
   const providerId = providerEntry.id
 
   const providerConfig = config?.provider?.[providerId]
@@ -287,7 +361,6 @@ async function syncProvider(config, providerEntry, globalOpts) {
       return
     }
 
-    // Optionally build enrich cache from models.dev
     let enrichCache = null
     if (globalOpts.enrich) {
       enrichCache = await fetchAndBuildEnrichCache({
@@ -315,7 +388,83 @@ async function syncProvider(config, providerEntry, globalOpts) {
   }
 }
 
-export default async function autoProviderModelsPlugin(_input, pluginOptions = {}) {
+// ---- v2 syncProvider ----
+
+async function syncProviderV2(ctx, providerEntry, globalOpts) {
+  const providerID = providerEntry.id
+
+  let providerInfo
+  try {
+    providerInfo = await ctx.provider.get({ providerID })
+  } catch (error) {
+    console.warn(`[auto-provider-models] provider not found: ${providerID}`)
+    return
+  }
+
+  const baseURL = providerEntry.baseURL || normalizeBaseUrl(providerInfo?.settings?.baseURL || globalOpts.baseURL)
+  if (!baseURL) {
+    console.warn(`[auto-provider-models] missing baseURL for provider: ${providerID}`)
+    return
+  }
+
+  const timeoutMs = Number.isFinite(globalOpts.timeout) ? globalOpts.timeout : DEFAULT_TIMEOUT
+  const cacheTTL = Number.isFinite(globalOpts.cacheTTL) ? globalOpts.cacheTTL : 0
+
+  try {
+    const apiKey = getApiKey(providerInfo?.settings, providerEntry, globalOpts)
+
+    const cacheKey = getCacheKey(baseURL, apiKey)
+    const cached = cacheTTL > 0 ? modelCache.get(cacheKey) : null
+    if (cached && Date.now() - cached.timestamp < cacheTTL) {
+      syncedModels.set(providerID, cached.items)
+      return
+    }
+
+    let enrichCache = null
+    if (globalOpts.enrich) {
+      enrichCache = await fetchAndBuildEnrichCache({
+        onError: (msg) => console.warn(`[auto-provider-models] enrich fetch failed: ${msg}`),
+      })
+    }
+
+    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
+    const items = []
+
+    let existingModels = new Map()
+    try {
+      const modelsResult = await ctx.model.list({ providerID })
+      if (modelsResult?.data) {
+        for (const model of modelsResult.data) {
+          existingModels.set(model.id, model)
+        }
+      }
+    } catch {
+      // 忽略错误
+    }
+
+    for (const remoteModel of remoteModels) {
+      const modelID = normalizeModelId(remoteModel?.id)
+      if (!modelID || !shouldKeepModel(modelID, globalOpts)) continue
+
+      const existing = existingModels.get(modelID)
+      items.push({ modelID, patch: buildV2ModelPatch(modelID, remoteModel, existing, enrichCache) })
+    }
+
+    syncedModels.set(providerID, items)
+
+    if (cacheTTL > 0) {
+      modelCache.set(cacheKey, { timestamp: Date.now(), items })
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[auto-provider-models] failed to sync models for ${providerID}: ${message}`)
+  }
+}
+
+/**
+ * v1 server 函数：供 OpenCode v1 调用
+ */
+async function server(_input, pluginOptions = {}) {
   return {
     config: async (config) => {
       const rawEntries = resolveProviderEntries(pluginOptions)
@@ -333,7 +482,7 @@ export default async function autoProviderModelsPlugin(_input, pluginOptions = {
         : DEFAULT_STARTUP_TIMEOUT
 
       const syncPromise = Promise.all(
-        entries.map((entry) => syncProvider(config, entry, pluginOptions))
+        entries.map((entry) => syncProviderV1(config, entry, pluginOptions))
       )
 
       const overallTimer = new Promise((resolve) => {
@@ -346,4 +495,57 @@ export default async function autoProviderModelsPlugin(_input, pluginOptions = {
       await Promise.race([syncPromise, overallTimer])
     },
   }
+}
+
+/**
+ * v2 setup 函数：供 OpenCode v2 调用
+ */
+async function setup(ctx) {
+  const rawEntries = resolveProviderEntries(ctx.options)
+  if (rawEntries.length === 0) {
+    console.warn("[auto-provider-models] missing required option: provider")
+    return
+  }
+
+  const entries = rawEntries.map(normalizeProviderEntry).filter((entry) => entry !== null)
+
+  await ctx.provider.transform((editor) => {
+    for (const [providerID, items] of syncedModels) {
+      for (const { modelID, patch } of items) {
+        editor.models.update(providerID, modelID, (draft) => {
+          for (const [key, value] of Object.entries(patch)) {
+            if (value !== undefined) draft[key] = value
+          }
+        })
+      }
+    }
+  })
+
+  const startupTimeout = Number.isFinite(ctx.options.startupTimeout)
+    ? ctx.options.startupTimeout
+    : DEFAULT_STARTUP_TIMEOUT
+
+  const syncPromise = Promise.all(entries.map((entry) => syncProviderV2(ctx, entry, ctx.options)))
+
+  const overallTimer = new Promise((resolve) => {
+    setTimeout(() => {
+      console.warn(`[auto-provider-models] startup timed out after ${startupTimeout}ms, models may be incomplete`)
+      resolve()
+    }, startupTimeout)
+  })
+
+  await Promise.race([syncPromise, overallTimer])
+
+  if (syncedModels.size > 0) {
+    await ctx.provider.reload()
+  }
+}
+
+// 同时支持 v1 和 v2
+// - v1: 调用 server() 函数
+// - v2: 读取 id + setup() 函数
+export default {
+  id: "opencode-auto-provider-models",
+  server,
+  setup,
 }
