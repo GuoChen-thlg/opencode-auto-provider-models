@@ -1,0 +1,47 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "compaction": {
+    "auto": true,
+    "prune": false
+  },
+  "server": {
+    "port": 4099,
+    "cors": []
+  },
+  "username": "opencode",
+  "autoupdate": true,
+  "plugins": [
+    {
+      "package": ".",
+      "options": {
+        "provider": [
+          "codebuddy"
+        ],
+        "timeout": 5000,
+        "enrich": true
+      }
+    }
+  ],
+  "providers": {
+    "codebuddy": {
+      "package": "@ai-sdk/openai-compatible",
+      "name": "codebuddy",
+      "settings": {
+        "baseURL": "http://127.0.0.1:8050",
+        "apiKey": "guxin123"
+      },
+      "models": {
+        "deepseek-v4.1-flash": {
+          "name": "DeepSeek V4.1 Flash",
+          "description": "DeepSeek V4.1 Flash model for reasoning and agentic coding",
+          "family": "deepseek-flash",
+          "attachment": true,
+          "reasoning": true,
+          "tool_call": true,
+          "structured_output": true,
+          "temperature": true
+        }
+      }
+    }
+  }
+}

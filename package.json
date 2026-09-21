@@ -18,22 +18,30 @@
     "url": "https://github.com/GuoChen-thlg/opencode-auto-provider-models/issues"
   },
   "type": "module",
-  "main": "./opencode-auto-provider-models.js",
+  "main": "./index.js",
   "exports": {
-    ".": "./opencode-auto-provider-models.js"
+    ".": "./index.js"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "test": "node --test",
+    "dev": "./node_modules/.bin/opencode",
     "pack": "npm pack --pack-destination .",
     "dev-install": "npm run pack && npm install -g ./guochen-thlg-opencode-auto-provider-models-*.tgz && rm guochen-thlg-opencode-auto-provider-models-*.tgz"
   },
   "files": [
-    "opencode-auto-provider-models.js",
+    "index.js",
     "enrichment.js",
     "README.md",
     "README.zh-CN.md"
-  ]
+  ],
+  "dependencies": {
+    "effect": "^3.22.2"
+  },
+  "devDependencies": {
+    "@opencode/cli": "^2.0.11",
+    "@opencode/plugin": "^2.0.11"
+  }
 }
