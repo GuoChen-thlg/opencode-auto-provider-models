@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-09-20
+
+- fix: v2 从 `ctx.config.providers[id].settings` 读取 `baseURL`（`ctx.provider.get()` 不返回 settings）
+- fix: 增加 `base_url` 字段兼容性检查
+
+## [0.2.1] - 2026-09-20
+
+- fix: v2 支持 `modelID` 字段，正确映射远程模型 ID 到 OpenCode model ID
+- fix: 保留现有 catalog 条目的 `modelID` 字段
+
 ## [0.2.0] - 2026-09-20
 
 - breaking: 合并 v1 和 v2 到单一入口点，移除 `opencode-auto-provider-models-v2.js`

@@ -199,6 +199,11 @@ function buildV2ModelPatch(modelId, remoteModel, existingInfo, enrichCache) {
     },
   }
 
+  // 如果远程 model ID 与 OpenCode model ID 不同，设置 modelID
+  if (remoteModel?.id && remoteModel.id !== modelId) {
+    patch.modelID = remoteModel.id
+  }
+
   const limit = deriveLimit(remoteModel)
   if (limit) patch.limit = limit
 
@@ -206,6 +211,7 @@ function buildV2ModelPatch(modelId, remoteModel, existingInfo, enrichCache) {
 
   if (existingInfo && typeof existingInfo === "object") {
     if (existingInfo.name) result.name = existingInfo.name
+    if (existingInfo.modelID) result.modelID = existingInfo.modelID
     if (existingInfo.capabilities) result.capabilities = existingInfo.capabilities
     if (existingInfo.limit) result.limit = existingInfo.limit
     if (existingInfo.family) result.family = existingInfo.family
@@ -401,7 +407,13 @@ async function syncProviderV2(ctx, providerEntry, globalOpts) {
     return
   }
 
-  const baseURL = providerEntry.baseURL || normalizeBaseUrl(providerInfo?.settings?.baseURL || globalOpts.baseURL)
+  console.log(`[auto-provider-models] providerInfo for ${providerID}:`, JSON.stringify(providerInfo, null, 2))
+  console.log(`[auto-provider-models] ctx.config keys:`, ctx.config ? Object.keys(ctx.config) : 'undefined')
+  console.log(`[auto-provider-models] ctx.config.providers keys:`, ctx.config?.providers ? Object.keys(ctx.config.providers) : 'undefined')
+
+  const providerSettings = providerInfo?.settings || ctx.config?.providers?.[providerID]?.settings || {}
+  const baseURL = providerEntry.baseURL
+    || normalizeBaseUrl(providerSettings.baseURL || providerSettings.base_url || globalOpts.baseURL)
   if (!baseURL) {
     console.warn(`[auto-provider-models] missing baseURL for provider: ${providerID}`)
     return
@@ -411,7 +423,7 @@ async function syncProviderV2(ctx, providerEntry, globalOpts) {
   const cacheTTL = Number.isFinite(globalOpts.cacheTTL) ? globalOpts.cacheTTL : 0
 
   try {
-    const apiKey = getApiKey(providerInfo?.settings, providerEntry, globalOpts)
+    const apiKey = getApiKey(providerSettings, providerEntry, globalOpts)
 
     const cacheKey = getCacheKey(baseURL, apiKey)
     const cached = cacheTTL > 0 ? modelCache.get(cacheKey) : null
