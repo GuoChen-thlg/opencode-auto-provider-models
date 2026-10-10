@@ -26,8 +26,8 @@
 
 ## 文件
 
-- `opencode-auto-provider-models.js`: OpenCode v1 插件实现
-- `opencode-auto-provider-models-v2.js`: OpenCode v2 插件实现（`/v2` 入口）
+- `index.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `enrichment.js`: 可选的模型增强逻辑（从 models.dev 补全缺失字段）
 
 ## 安装
 
@@ -48,16 +48,14 @@ bun install guochen-thlg/opencode-auto-provider-models
 
 ## OpenCode v2
 
-OpenCode v2 使用全新的插件 API，插件从 `plugins` 数组加载。v2 入口位于
-`@guochen-thlg/opencode-auto-provider-models/v2` 子路径（或本地
-`./opencode-auto-provider-models-v2.js` 文件）：
+OpenCode v2 使用不同的插件 API。插件通过 `plugins` 数组加载，入口就是包本身（同一个 `index.js` 同时支持 v1 和 v2）：
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "@guochen-thlg/opencode-auto-provider-models/v2",
+      "package": "@guochen-thlg/opencode-auto-provider-models",
       "options": {
         "provider": "custom-provider"
       }
@@ -72,9 +70,26 @@ OpenCode v2 使用全新的插件 API，插件从 `plugins` 数组加载。v2 �
 {
   "plugins": [
     {
-      "package": "./opencode-auto-provider-models-v2.js",
+      "package": "./index.js",
       "options": {
         "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+v2 的 `Provider.Info` 不返回 `settings.baseURL`，因此 v2 下必须在插件 `options` 里显式提供 `baseURL`（`provider` 写成对象数组）：
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "@guochen-thlg/opencode-auto-provider-models",
+      "options": {
+        "provider": [
+          { "id": "custom-provider", "baseURL": "http://127.0.0.1:8050/v1", "apiKey": "sk-xxx" }
+        ]
       }
     }
   ]

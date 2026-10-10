@@ -26,7 +26,8 @@ If the remote request fails, the plugin only prints a warning and does not block
 
 ## Files
 
-- `opencode-auto-provider-models.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `index.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `enrichment.js`: 可选的模型增强逻辑（从 models.dev 补全缺失字段）
 
 ## Installation
 
@@ -69,7 +70,7 @@ With a local checkout:
 {
   "plugins": [
     {
-      "package": "./opencode-auto-provider-models.js",
+      "package": "./index.js",
       "options": {
         "provider": "custom-provider"
       }
