@@ -1,7 +1,11 @@
 name: Release & Publish
 
+# 依赖 Smoke Test：只有 main 分支的 Smoke Test 通过后才发布，
+# 避免与测试并行导致"测试还没过就已发布"。
 on:
-  push:
+  workflow_run:
+    workflows: ["Smoke Test"]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -14,11 +18,17 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+    # Smoke Test 也监听 pull_request，这里只放行 main 分支且成功的运行
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
