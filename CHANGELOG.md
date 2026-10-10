@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-10-10
+
+- fix: v2 启动时 `ctx.provider.get()` 抛 `Provider not found`，原逻辑直接跳过导致模型列表同步中断
+- fix: `provider.get()` 失败改为重试 5 次（间隔 500ms），仍失败则回退到空 settings，只要 provider 配置带 `baseURL` 仍可正常同步
+- refactor: 使用 `Plugin.define()` 包装 v2 定义，对齐官方插件写法
+- chore: `@opencode/plugin` 从 devDependencies 移入 dependencies（运行时依赖）
+
+## [0.3.0] - 2026-10-10
+
+- feat: 完整支持 OpenCode v2 plugin API，v2 入口为 `setup(ctx)` 函数
+- feat: v2 通过 `ctx.provider.transform()` 注册模型补丁，`ctx.provider.reload()` 触发模型列表刷新
+- feat: v2 从插件 `options` 中读取 provider 的 `baseURL`/`apiKey`（v2 的 `Provider.Info` 不返回 `settings.baseURL`）
+- chore: 新增 `@opencode/cli` / `@opencode/plugin` devDependencies 用于本地 v2 调试
+- chore: 新增 `npm run dev` 脚本启动本地 v2 服务
+
 ## [0.2.2] - 2026-09-20
 
 - fix: v2 从 `ctx.config.providers[id].settings` 读取 `baseURL`（`ctx.provider.get()` 不返回 settings）
