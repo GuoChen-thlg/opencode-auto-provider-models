@@ -26,8 +26,8 @@
 
 ## 文件
 
-- `opencode-auto-provider-models.js`: OpenCode v1 插件实现
-- `opencode-auto-provider-models-v2.js`: OpenCode v2 插件实现（`/v2` 入口）
+- `index.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `enrichment.js`: 可选的模型增强逻辑（从 models.dev 补全缺失字段）
 
 ## 安装
 
@@ -48,16 +48,14 @@ bun install guochen-thlg/opencode-auto-provider-models
 
 ## OpenCode v2
 
-OpenCode v2 使用全新的插件 API，插件从 `plugins` 数组加载。v2 入口位于
-`@guochen-thlg/opencode-auto-provider-models/v2` 子路径（或本地
-`./opencode-auto-provider-models-v2.js` 文件）：
+OpenCode v2 使用不同的插件 API。插件通过 `plugins` 数组加载，入口就是包本身（同一个 `index.js` 同时支持 v1 和 v2）：
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "@guochen-thlg/opencode-auto-provider-models/v2",
+      "package": "@guochen-thlg/opencode-auto-provider-models",
       "options": {
         "provider": "custom-provider"
       }
@@ -72,9 +70,26 @@ OpenCode v2 使用全新的插件 API，插件从 `plugins` 数组加载。v2 �
 {
   "plugins": [
     {
-      "package": "./opencode-auto-provider-models-v2.js",
+      "package": "./index.js",
       "options": {
         "provider": "custom-provider"
+      }
+    }
+  ]
+}
+```
+
+v2 的 `Provider.Info` 不返回 `settings.baseURL`，因此 v2 下必须在插件 `options` 里显式提供 `baseURL`（`provider` 写成对象数组）：
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "@guochen-thlg/opencode-auto-provider-models",
+      "options": {
+        "provider": [
+          { "id": "custom-provider", "baseURL": "http://127.0.0.1:8050/v1", "apiKey": "sk-xxx" }
+        ]
       }
     }
   ]
@@ -280,14 +295,30 @@ v2 模型结构（`capabilities.tools`、`capabilities.input`、`capabilities.ou
 
 ## 发布
 
-发布新版本到 GitHub Packages 的步骤：
+`main` 分支禁止直接提交，发布一律走 `dev -> PR -> main`。
 
-1. 更新 `package.json` 里的 `version`
-2. 更新 `CHANGELOG.md`
-3. 提交并推送改动到 `main`
-4. 创建并推送版本标签（会自动触发 GitHub Actions 创建 release + 发布包）：
+### 发布新版本
+
+在 `dev` 分支上执行：
 
 ```bash
-git tag -a v<version> -m "v<version>"
-git push origin v<version>
+# patch: 0.3.1 -> 0.3.2 | minor: 0.3.1 -> 0.4.0 | major: 0.3.1 -> 1.0.0
+npm run release patch
 ```
+
+脚本会依次完成：确认在 `dev` 且工作区干净 -> 跑全部测试 -> 同步远程 `dev` -> 递增版本号并提交 -> 创建 `dev -> main` 的 PR，并打印 PR 链接。
+
+### 合并后自动发布
+
+PR 合并到 `main` 时，CI（`publish-github-packages.yml`）会自动：
+
+1. 读取 `package.json` 的 `version`，若该版本已发布则直接跳过
+2. 运行 `npm test` 作为发布门禁
+3. 打 tag `v<version>` 并创建 GitHub Release（自动汇总提交说明）
+4. 发布包到 GitHub Packages
+
+因此合并 PR 后无需任何手动操作，到 Releases 页面确认即可。
+
+### 发布前请更新 CHANGELOG
+
+版本号递增脚本不负责写变更记录，发布前请在 `CHANGELOG.md` 顶部补充新版本条目。

@@ -26,7 +26,8 @@ If the remote request fails, the plugin only prints a warning and does not block
 
 ## Files
 
-- `opencode-auto-provider-models.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `index.js`: 同时支持 OpenCode v1 和 v2 的插件实现
+- `enrichment.js`: 可选的模型增强逻辑（从 models.dev 补全缺失字段）
 
 ## Installation
 
@@ -69,7 +70,7 @@ With a local checkout:
 {
   "plugins": [
     {
-      "package": "./opencode-auto-provider-models.js",
+      "package": "./index.js",
       "options": {
         "provider": "custom-provider"
       }
@@ -273,14 +274,30 @@ If the remote endpoint also returns the following fields, the plugin maps them w
 
 ## Release
 
-To publish a new version to GitHub Packages:
+Direct commits to `main` are not allowed. Releases always go through `dev -> PR -> main`.
 
-1. Update `version` in `package.json`
-2. Update `CHANGELOG.md`
-3. Commit and push changes to `main`
-4. Create and push the version tag (automatically triggers GitHub Actions to create a release + publish the package):
+### Cutting a new version
+
+Run on the `dev` branch:
 
 ```bash
-git tag -a v<version> -m "v<version>"
-git push origin v<version>
+# patch: 0.3.1 -> 0.3.2 | minor: 0.3.1 -> 0.4.0 | major: 0.3.1 -> 1.0.0
+npm run release patch
 ```
+
+The script verifies you are on `dev` with a clean working tree, runs the full test suite, syncs with the remote `dev`, bumps the version and commits it, then opens a `dev -> main` PR and prints the link.
+
+### Auto-publish after merge
+
+When the PR is merged into `main`, the CI workflow (`publish-github-packages.yml`) will:
+
+1. Read `version` from `package.json` and skip if that version is already published
+2. Run `npm test` as a publish gate
+3. Create tag `v<version>` and a GitHub Release (release notes are generated automatically)
+4. Publish the package to GitHub Packages
+
+No manual steps are needed after merging — just verify on the Releases page.
+
+### Update CHANGELOG before releasing
+
+The version bump script does not write changelog entries. Add the new version section at the top of `CHANGELOG.md` before releasing.

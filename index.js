@@ -18,6 +18,7 @@
 
 import { fetchAndBuildEnrichCache, lookupEnrichment, resetCache as resetEnrichCache } from "./enrichment.js"
 import { Effect } from "effect"
+import { Plugin } from "@opencode/plugin"
 
 const DEFAULT_INPUT_MODALITIES = ["text"]
 const DEFAULT_OUTPUT_MODALITIES = ["text"]
@@ -538,13 +539,19 @@ async function setup(ctx) {
     for (const entry of entries) {
       const providerID = entry.id
 
-      let providerInfo
-      try {
-        providerInfo = await ctx.provider.get({ providerID })
-      } catch (error) {
-        continue
+      let providerInfo = null
+      // setup 可能早于 provider 注册完成，重试几次
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          providerInfo = await ctx.provider.get({ providerID })
+          break
+        } catch (error) {
+          if (attempt === 4) break
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
       }
 
+      // providerInfo 拿不到时回退到空 settings，只要 entry 带了 baseURL 仍可同步
       const settings = providerInfo?.settings || {}
       const baseURL = entry.baseURL || normalizeBaseUrl(settings.baseURL || ctx.options.baseURL)
       if (!baseURL) {
@@ -598,9 +605,13 @@ function effect(ctx) {
 
 // 同时支持 v1 和 v2
 // - v1: 调用 server() 函数
-// - v2: 调用 setup(ctx) 函数
-export default {
+// - v2: 通过 Plugin.define() 返回的定义触发 setup(ctx)
+const v2Definition = Plugin.define({
   id: "opencode-auto-provider-models",
   setup,
+})
+
+export default {
+  ...v2Definition,
   server,
 }

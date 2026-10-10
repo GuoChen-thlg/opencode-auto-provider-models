@@ -1,6 +1,6 @@
 {
   "name": "@guochen-thlg/opencode-auto-provider-models",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "OpenCode plugin that auto-syncs models for an OpenAI-compatible provider.",
   "keywords": [
     "opencode",
@@ -28,6 +28,7 @@
   "scripts": {
     "test": "node --test",
     "dev": "./node_modules/.bin/opencode",
+    "release": "node scripts/release.mjs",
     "pack": "npm pack --pack-destination .",
     "dev-install": "npm run pack && npm install -g ./guochen-thlg-opencode-auto-provider-models-*.tgz && rm guochen-thlg-opencode-auto-provider-models-*.tgz"
   },
@@ -38,10 +39,10 @@
     "README.zh-CN.md"
   ],
   "dependencies": {
+    "@opencode/plugin": "^2.0.11",
     "effect": "^3.22.2"
   },
   "devDependencies": {
-    "@opencode/cli": "^2.0.11",
-    "@opencode/plugin": "^2.0.11"
+    "@opencode/cli": "^2.0.11"
   }
 }
