@@ -26,5 +26,8 @@ jobs:
       - name: Verify package packs successfully
         run: npm pack --dry-run
 
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
       - name: Verify package entry can be imported
-        run: node --input-type=module -e "await import('./opencode-auto-provider-models.js')"
+        run: node --input-type=module -e "await import('./index.js')"
