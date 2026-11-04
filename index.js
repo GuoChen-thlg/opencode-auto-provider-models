@@ -14,6 +14,9 @@
  *
  * 当启用 `enrich`（默认：false）时，插件会获取
  * https://models.dev/models.json 并从匹配的条目填充缺失字段。
+ *
+ * v2 模式下还会按 `refreshInterval`（默认 1 小时）定时重新拉取模型列表，
+ * 列表有变化时触发 `provider.reload()`；v1 只在启动时同步一次。
  */
 
 import { fetchAndBuildEnrichCache, lookupEnrichment, resetCache as resetEnrichCache } from "./enrichment.js"
@@ -24,6 +27,8 @@ const DEFAULT_INPUT_MODALITIES = ["text"]
 const DEFAULT_OUTPUT_MODALITIES = ["text"]
 const DEFAULT_TIMEOUT = 1000
 const DEFAULT_STARTUP_TIMEOUT = 3000
+// 默认每小时（3600000ms）定时刷新一次模型列表；显式配置为 0 或非法值时关闭
+const DEFAULT_REFRESH_INTERVAL = 3600000
 
 const modelCache = new Map()
 const inflightRequests = new Map()
@@ -172,11 +177,21 @@ function applyEnrichmentV2(modelId, patch, enrichCache) {
   }
   if (typeof matched.family === "string" && !result.family) result.family = matched.family
 
-  result.capabilities = { ...(result.capabilities || { tools: true, input: [], output: [] }) }
-  if (Array.isArray(matched.modalities?.input) && matched.modalities.input.length) {
+  result.capabilities = { ...(result.capabilities || { tools: true, input: DEFAULT_INPUT_MODALITIES, output: DEFAULT_OUTPUT_MODALITIES }) }
+  // 与 v1 对齐：远端声明的非默认能力优先，enrich 只在远端为默认值（纯文本）时兜底，
+  // 避免 models.dev 的过时数据覆盖远端真实能力（如 image input）
+  if (
+    Array.isArray(matched.modalities?.input) &&
+    matched.modalities.input.length &&
+    isDefaultModalities({ input: result.capabilities.input })
+  ) {
     result.capabilities.input = [...matched.modalities.input]
   }
-  if (Array.isArray(matched.modalities?.output) && matched.modalities.output.length) {
+  if (
+    Array.isArray(matched.modalities?.output) &&
+    matched.modalities.output.length &&
+    isDefaultModalities({ output: result.capabilities.output })
+  ) {
     result.capabilities.output = [...matched.modalities.output]
   }
   if (typeof matched.tool_call === "boolean") result.capabilities.tools = matched.tool_call
@@ -470,6 +485,81 @@ async function syncProviderV2(ctx, providerEntry, globalOpts) {
   }
 }
 
+// ---- v2 定时刷新辅助 ----
+
+/**
+ * 解析定时刷新间隔（毫秒）。
+ * 未配置时使用默认值（1 小时）；显式配置为 0、负数或非法值时返回 0，表示关闭定时刷新。
+ */
+function resolveRefreshInterval(options) {
+  const raw = options?.refreshInterval
+  if (raw === undefined || raw === null) return DEFAULT_REFRESH_INTERVAL
+  return Number.isFinite(raw) && raw > 0 ? raw : 0
+}
+
+/**
+ * 将 syncedModels 序列化为稳定字符串，用于比较刷新前后模型列表是否有变化。
+ */
+function snapshotSyncedModels() {
+  const entries = [...syncedModels.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return JSON.stringify(entries)
+}
+
+/**
+ * 逐个同步 provider 的模型列表到 syncedModels（v2）。
+ * 启动同步和定时刷新共用；失败的 provider 保留 syncedModels 中的旧列表。
+ */
+async function syncProvidersV2(ctx, entries) {
+  for (const entry of entries) {
+    const providerID = entry.id
+
+    let providerInfo = null
+    // setup 可能早于 provider 注册完成，重试几次
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        providerInfo = await ctx.provider.get({ providerID })
+        break
+      } catch (error) {
+        if (attempt === 4) break
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+    }
+
+    // providerInfo 拿不到时回退到空 settings，只要 entry 带了 baseURL 仍可同步
+    const settings = providerInfo?.settings || {}
+    const baseURL = entry.baseURL || normalizeBaseUrl(settings.baseURL || ctx.options.baseURL)
+    if (!baseURL) {
+      continue
+    }
+
+    const timeoutMs = Number.isFinite(ctx.options.timeout) ? ctx.options.timeout : DEFAULT_TIMEOUT
+    const apiKey = getApiKey(settings, entry, ctx.options)
+
+    try {
+      let enrichCache = null
+      if (ctx.options.enrich) {
+        enrichCache = await fetchAndBuildEnrichCache({
+          onError: (msg) => console.warn(`enrich fetch failed: ${msg}`),
+        })
+      }
+
+      const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
+      const items = []
+
+      for (const remoteModel of remoteModels) {
+        const modelID = normalizeModelId(remoteModel?.id)
+        if (!modelID || !shouldKeepModel(modelID, ctx.options)) continue
+        items.push({ modelID, patch: buildV2ModelPatch(modelID, remoteModel, null, enrichCache) })
+      }
+
+      syncedModels.set(providerID, items)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`failed to sync models for ${providerID}: ${message}`)
+    }
+  }
+}
+
 /**
  * v1 server 函数：供 OpenCode v1 调用
  */
@@ -529,69 +619,64 @@ async function setup(ctx) {
     }
   })
 
-  // 异步获取模型数据，存入 syncedModels，然后 reload
-  const startupTimeout = Number.isFinite(ctx.options.startupTimeout)
-    ? ctx.options.startupTimeout
-    : DEFAULT_STARTUP_TIMEOUT
+  // 定时刷新配置：默认每小时重新拉取一次模型列表，列表有变化时才 reload
+  const refreshInterval = resolveRefreshInterval(ctx.options)
+  let refreshTimer = null
+  let refreshStopped = false
+  let refreshInFlight = false
 
-  // 后台异步同步模型
+  // 启动同步完成后再启动定时刷新，避免首轮刷新与启动同步并发、把启动结果误判为刷新带来的变化
+  const startRefreshTimer = () => {
+    if (refreshStopped || refreshInterval <= 0 || refreshTimer !== null) return
+
+    refreshTimer = setInterval(() => {
+      // 上一轮刷新还没结束时跳过本轮，避免请求堆积
+      if (refreshInFlight || refreshStopped) return
+      refreshInFlight = true
+
+      ;(async () => {
+        const before = snapshotSyncedModels()
+        await syncProvidersV2(ctx, entries)
+        const after = snapshotSyncedModels()
+
+        if (!refreshStopped && syncedModels.size > 0 && before !== after) {
+          await ctx.provider.reload()
+        }
+      })()
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          console.warn(`refresh models failed: ${message}`)
+        })
+        .finally(() => {
+          refreshInFlight = false
+        })
+    }, refreshInterval)
+  }
+
+  // 后台异步同步模型，完成后触发 reload 让 transform 重新执行，再启动定时刷新
   ;(async () => {
-    for (const entry of entries) {
-      const providerID = entry.id
-
-      let providerInfo = null
-      // setup 可能早于 provider 注册完成，重试几次
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          providerInfo = await ctx.provider.get({ providerID })
-          break
-        } catch (error) {
-          if (attempt === 4) break
-          await new Promise((resolve) => setTimeout(resolve, 500))
-        }
-      }
-
-      // providerInfo 拿不到时回退到空 settings，只要 entry 带了 baseURL 仍可同步
-      const settings = providerInfo?.settings || {}
-      const baseURL = entry.baseURL || normalizeBaseUrl(settings.baseURL || ctx.options.baseURL)
-      if (!baseURL) {
-        continue
-      }
-
-      const timeoutMs = Number.isFinite(ctx.options.timeout) ? ctx.options.timeout : DEFAULT_TIMEOUT
-      const apiKey = getApiKey(settings, entry, ctx.options)
-
-      try {
-        let enrichCache = null
-        if (ctx.options.enrich) {
-          enrichCache = await fetchAndBuildEnrichCache({
-            onError: (msg) => console.warn(`enrich fetch failed: ${msg}`),
-          })
-        }
-
-        const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
-        const items = []
-
-        for (const remoteModel of remoteModels) {
-          const modelID = normalizeModelId(remoteModel?.id)
-          if (!modelID || !shouldKeepModel(modelID, ctx.options)) continue
-          items.push({ modelID, patch: buildV2ModelPatch(modelID, remoteModel, null, enrichCache) })
-        }
-
-        syncedModels.set(providerID, items)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        console.warn(`failed to sync models for ${providerID}: ${message}`)
-      }
-    }
+    await syncProvidersV2(ctx, entries)
 
     // 触发 reload，让 transform 重新执行
     if (syncedModels.size > 0) {
       await ctx.provider.reload()
     }
+
+    startRefreshTimer()
   })().catch((error) => {
     console.error(`background sync failed: ${error.message}`)
+    // 启动同步失败也要启动定时刷新，后续轮次可自行恢复
+    startRefreshTimer()
   })
+
+  // 返回 cleanup，插件卸载时清除定时器
+  return () => {
+    refreshStopped = true
+    if (refreshTimer !== null) {
+      clearInterval(refreshTimer)
+      refreshTimer = null
+    }
+  }
 }
 
 /**

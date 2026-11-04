@@ -775,3 +775,269 @@ describe("provider hook", () => {
     assert.equal(result.provider, undefined)
   })
 })
+
+// ---- v2 定时刷新模型列表 ----
+
+describe("v2 定时刷新模型列表", () => {
+  // 构造 v2 setup 所需的最小 ctx，记录 reload 次数与注册的 transform
+  function makeV2Ctx(providerId, baseURL, options = {}) {
+    let reloadCount = 0
+    const transforms = []
+    return {
+      transforms,
+      get reloadCount() {
+        return reloadCount
+      },
+      ctx: {
+        options: {
+          provider: [{ id: providerId, baseURL, apiKey: "sk-test" }],
+          timeout: 2000,
+          refreshInterval: 100,
+          ...options,
+        },
+        provider: {
+          transform: async (cb) => {
+            transforms.push(cb)
+          },
+          get: async () => ({ settings: { baseURL, apiKey: "sk-test" } }),
+          reload: async () => {
+            reloadCount += 1
+          },
+        },
+        model: { list: async () => ({ data: [] }) },
+      },
+    }
+  }
+
+  // 轮询等待条件成立，超时则断言失败
+  async function waitFor(cond, timeoutMs = 4000, stepMs = 20) {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (cond()) return
+      await new Promise((resolve) => setTimeout(resolve, stepMs))
+    }
+    assert.ok(cond(), "等待条件超时")
+  }
+
+  // 创建返回内容可动态修改、可切换为失败状态的本地模型服务
+  function createMutableServer(initialPayload) {
+    const state = { payload: initialPayload, fail: false }
+    const server = http.createServer((req, res) => {
+      if (state.fail) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: "boom" }))
+        return
+      }
+      if (req.url === "/v1/models" || req.url === "/models") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify(state.payload))
+        return
+      }
+      res.writeHead(404)
+      res.end(JSON.stringify({ error: "not found" }))
+    })
+    return { server, state }
+  }
+
+  // 执行所有 transform，返回应用后的模型补丁集合（modelID -> draft）
+  function applyTransforms(transforms) {
+    const models = new Map()
+    const editor = {
+      models: {
+        update(providerID, modelID, updateFn) {
+          const draft = models.get(modelID) || {}
+          updateFn(draft)
+          models.set(modelID, draft)
+        },
+      },
+    }
+    for (const cb of transforms) cb(editor)
+    return models
+  }
+
+  it("刷新间隔到期后重新拉取，列表有变化时触发 reload", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    const { server, state } = createMutableServer({ data: [{ id: "model-a" }] })
+    await withServer(server, port)
+
+    const handle = makeV2Ctx(`refresh-changed-${port}`, baseURL)
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      // 启动同步完成后触发第一次 reload
+      await waitFor(() => handle.reloadCount >= 1)
+
+      // 远端列表变化后，定时刷新应触发第二次 reload
+      state.payload = { data: [{ id: "model-a" }, { id: "model-b" }] }
+      await waitFor(() => handle.reloadCount >= 2)
+      // 兜底：等待新模型真正注入 syncedModels 后再断言
+      await waitFor(() => applyTransforms(handle.transforms).has("model-b"))
+
+      const models = applyTransforms(handle.transforms)
+      assert.ok(models.has("model-a"), "刷新后应保留 model-a")
+      assert.ok(models.has("model-b"), "刷新后应注入新模型 model-b")
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      await stopServer(server)
+    }
+  })
+
+  it("模型列表无变化时定时刷新不触发 reload", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    const { server } = createMutableServer({ data: [{ id: "model-a" }] })
+    await withServer(server, port)
+
+    const handle = makeV2Ctx(`refresh-unchanged-${port}`, baseURL)
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      // 远端列表不变，等待约 3 个刷新周期，reload 次数不应增加
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      assert.equal(handle.reloadCount, 1, "无变化时不应重复 reload")
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      await stopServer(server)
+    }
+  })
+
+  it("刷新失败时保留已有模型列表，恢复后可继续刷新", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    const { server, state } = createMutableServer({ data: [{ id: "model-a" }] })
+    await withServer(server, port)
+
+    const handle = makeV2Ctx(`refresh-failure-${port}`, baseURL)
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      // 远端开始返回 500：多轮刷新失败，不应触发 reload，旧列表保留
+      state.fail = true
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      assert.equal(handle.reloadCount, 1, "刷新失败时不应触发 reload")
+      const modelsDuringFailure = applyTransforms(handle.transforms)
+      assert.ok(modelsDuringFailure.has("model-a"), "失败期间旧模型列表应保留")
+
+      // 远端恢复且列表有变化：应触发新的 reload 并注入新模型
+      state.fail = false
+      state.payload = { data: [{ id: "model-a" }, { id: "model-c" }] }
+      await waitFor(() => handle.reloadCount >= 2)
+
+      const models = applyTransforms(handle.transforms)
+      assert.ok(models.has("model-c"), "恢复后应注入新模型 model-c")
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      await stopServer(server)
+    }
+  })
+
+  it("cleanup 后停止定时刷新", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    const { server, state } = createMutableServer({ data: [{ id: "model-a" }] })
+    await withServer(server, port)
+
+    const handle = makeV2Ctx(`refresh-cleanup-${port}`, baseURL)
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      // 调用 cleanup 清除定时器后，即使列表变化也不再刷新
+      if (typeof cleanup === "function") cleanup()
+      state.payload = { data: [{ id: "model-a" }, { id: "model-d" }] }
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      assert.equal(handle.reloadCount, 1, "cleanup 后不应再触发 reload")
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      await stopServer(server)
+    }
+  })
+
+  it("refreshInterval 为 0 时关闭定时刷新", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    const { server, state } = createMutableServer({ data: [{ id: "model-a" }] })
+    await withServer(server, port)
+
+    const handle = makeV2Ctx(`refresh-disabled-${port}`, baseURL, { refreshInterval: 0 })
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      // 定时刷新已关闭：列表变化后 reload 次数不应增加
+      state.payload = { data: [{ id: "model-a" }, { id: "model-e" }] }
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      assert.equal(handle.reloadCount, 1, "refreshInterval 为 0 时不应触发定时刷新")
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      await stopServer(server)
+    }
+  })
+
+  it("enrich 不覆盖远端声明的非默认 modalities，远端为默认值时兜底", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    // model-a：远端明确声明 image input；model-b：远端未声明 input（默认纯文本）
+    const { server } = createMutableServer({
+      data: [
+        { id: "model-a", input_modalities: ["text", "image"], output_modalities: ["text"] },
+        { id: "model-b", output_modalities: ["text"] },
+      ],
+    })
+    await withServer(server, port)
+
+    // 模拟 models.dev 过时数据：model-a 标为纯文本（应被忽略），model-b 可用 enrich 补充 image
+    const realFetch = globalThis.fetch
+    mock.method(globalThis, "fetch")
+    globalThis.fetch.mock.mockImplementation(async (url, opts) => {
+      if (url === "https://models.dev/models.json") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            "someprovider/model-a": { id: "someprovider/model-a", modalities: { input: ["text"], output: ["text"] } },
+            "someprovider/model-b": { id: "someprovider/model-b", modalities: { input: ["text", "image"], output: ["text"] } },
+          }),
+        }
+      }
+      return realFetch(url, opts)
+    })
+
+    const handle = makeV2Ctx(`enrich-priority-${port}`, baseURL, { enrich: true })
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      const models = applyTransforms(handle.transforms)
+      const patchA = models.get("model-a")
+      const patchB = models.get("model-b")
+      assert.ok(patchA, "model-a 应被同步")
+      assert.ok(patchB, "model-b 应被同步")
+
+      // 远端非默认声明优先：models.dev 的纯文本过时数据不得覆盖 image input
+      assert.deepEqual(
+        patchA.capabilities.input,
+        ["text", "image"],
+        "远端声明的 image input 不应被 enrich 覆盖"
+      )
+      // 远端为默认纯文本时 enrich 正常兜底
+      assert.deepEqual(
+        patchB.capabilities.input,
+        ["text", "image"],
+        "远端未声明时 enrich 应兜底填充 input modalities"
+      )
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      mock.restoreAll()
+      await stopServer(server)
+    }
+  })
+})
