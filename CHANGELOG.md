@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-04
 
 - fix: v2 enrich 不再覆盖远端声明的非默认 modalities，修复 models.dev 过时数据导致 image input 能力丢失；远端为默认纯文本时仍由 enrich 兜底，与 v1 行为对齐
 - feat: v2 新增 `refreshInterval` 选项，按固定间隔定时重新拉取模型列表（默认 `3600000` 即 1 小时，设为 `0` 关闭）
