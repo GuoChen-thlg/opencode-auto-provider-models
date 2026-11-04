@@ -218,6 +218,8 @@ The plugin sends an HTTP request to `${baseURL}/models` for each provider on eve
 
 The plugin can fetch supplemental metadata from `https://models.dev/models.json` and fill in missing fields for each model entry. This is optional and disabled by default.
 
+Priority: when the remote `/models` payload already declares non-default modalities (e.g. image input), the remote declaration wins; enrich only fills in values when the remote reports the default plain-text modality, so stale models.dev data cannot override real remote capabilities.
+
 To enable it:
 
 ```jsonc

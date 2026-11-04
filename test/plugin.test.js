@@ -980,4 +980,64 @@ describe("v2 定时刷新模型列表", () => {
       await stopServer(server)
     }
   })
+
+  it("enrich 不覆盖远端声明的非默认 modalities，远端为默认值时兜底", async () => {
+    const port = getPort()
+    const baseURL = `http://127.0.0.1:${port}/v1`
+    // model-a：远端明确声明 image input；model-b：远端未声明 input（默认纯文本）
+    const { server } = createMutableServer({
+      data: [
+        { id: "model-a", input_modalities: ["text", "image"], output_modalities: ["text"] },
+        { id: "model-b", output_modalities: ["text"] },
+      ],
+    })
+    await withServer(server, port)
+
+    // 模拟 models.dev 过时数据：model-a 标为纯文本（应被忽略），model-b 可用 enrich 补充 image
+    const realFetch = globalThis.fetch
+    mock.method(globalThis, "fetch")
+    globalThis.fetch.mock.mockImplementation(async (url, opts) => {
+      if (url === "https://models.dev/models.json") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            "someprovider/model-a": { id: "someprovider/model-a", modalities: { input: ["text"], output: ["text"] } },
+            "someprovider/model-b": { id: "someprovider/model-b", modalities: { input: ["text", "image"], output: ["text"] } },
+          }),
+        }
+      }
+      return realFetch(url, opts)
+    })
+
+    const handle = makeV2Ctx(`enrich-priority-${port}`, baseURL, { enrich: true })
+    const cleanup = await pluginModule.setup(handle.ctx)
+
+    try {
+      await waitFor(() => handle.reloadCount >= 1)
+
+      const models = applyTransforms(handle.transforms)
+      const patchA = models.get("model-a")
+      const patchB = models.get("model-b")
+      assert.ok(patchA, "model-a 应被同步")
+      assert.ok(patchB, "model-b 应被同步")
+
+      // 远端非默认声明优先：models.dev 的纯文本过时数据不得覆盖 image input
+      assert.deepEqual(
+        patchA.capabilities.input,
+        ["text", "image"],
+        "远端声明的 image input 不应被 enrich 覆盖"
+      )
+      // 远端为默认纯文本时 enrich 正常兜底
+      assert.deepEqual(
+        patchB.capabilities.input,
+        ["text", "image"],
+        "远端未声明时 enrich 应兜底填充 input modalities"
+      )
+    } finally {
+      if (typeof cleanup === "function") cleanup()
+      mock.restoreAll()
+      await stopServer(server)
+    }
+  })
 })

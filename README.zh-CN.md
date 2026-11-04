@@ -239,6 +239,8 @@ v2 模型结构（`capabilities.tools`、`capabilities.input`、`capabilities.ou
 
 插件可以额外从 `https://models.dev/models.json` 获取模型的补充元数据（如描述、家族、能力等），并自动填充到模型条目中缺失的字段。
 
+优先级：当远端 `/models` 已声明非默认的 modalities（如 image input）时，以远端声明为准，enrich 只在远端为默认纯文本时兜底填充，避免 models.dev 的过时数据覆盖远端真实能力。
+
 这是一个可选功能，默认关闭。启用方式：
 
 ```jsonc

@@ -177,11 +177,21 @@ function applyEnrichmentV2(modelId, patch, enrichCache) {
   }
   if (typeof matched.family === "string" && !result.family) result.family = matched.family
 
-  result.capabilities = { ...(result.capabilities || { tools: true, input: [], output: [] }) }
-  if (Array.isArray(matched.modalities?.input) && matched.modalities.input.length) {
+  result.capabilities = { ...(result.capabilities || { tools: true, input: DEFAULT_INPUT_MODALITIES, output: DEFAULT_OUTPUT_MODALITIES }) }
+  // 与 v1 对齐：远端声明的非默认能力优先，enrich 只在远端为默认值（纯文本）时兜底，
+  // 避免 models.dev 的过时数据覆盖远端真实能力（如 image input）
+  if (
+    Array.isArray(matched.modalities?.input) &&
+    matched.modalities.input.length &&
+    isDefaultModalities({ input: result.capabilities.input })
+  ) {
     result.capabilities.input = [...matched.modalities.input]
   }
-  if (Array.isArray(matched.modalities?.output) && matched.modalities.output.length) {
+  if (
+    Array.isArray(matched.modalities?.output) &&
+    matched.modalities.output.length &&
+    isDefaultModalities({ output: result.capabilities.output })
+  ) {
     result.capabilities.output = [...matched.modalities.output]
   }
   if (typeof matched.tool_call === "boolean") result.capabilities.tools = matched.tool_call
