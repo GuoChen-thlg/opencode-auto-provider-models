@@ -36,6 +36,11 @@ jobs:
           node-version: 24
           registry-url: https://npm.pkg.github.com
 
+      # 发布前会执行 npm test，测试导入 index.js 需要 dependencies（effect 等），
+      # 此前缺少该步骤导致新版本首次真实执行测试时因找不到模块而发布失败
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
       - name: Release and publish if version is new
         run: |
           set -uo pipefail
