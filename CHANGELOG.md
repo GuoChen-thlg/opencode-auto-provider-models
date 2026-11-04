@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- feat: v2 新增 `refreshInterval` 选项，按固定间隔定时重新拉取模型列表（默认 `3600000` 即 1 小时，设为 `0` 关闭）
+- feat: 定时刷新仅在模型列表有变化时触发 `provider.reload()`；刷新失败保留已有列表；上一轮未完成时跳过本轮，避免请求堆积
+- feat: `setup()` 返回 cleanup 函数，插件卸载时清除定时刷新定时器
+- refactor: 抽取 `syncProvidersV2()`，启动同步与定时刷新共用同一套同步逻辑
+
 ## [0.3.1] - 2026-10-10
 
 - fix: v2 启动时 `ctx.provider.get()` 抛 `Provider not found`，原逻辑直接跳过导致模型列表同步中断

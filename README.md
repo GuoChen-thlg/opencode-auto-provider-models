@@ -212,6 +212,7 @@ The plugin sends an HTTP request to `${baseURL}/models` for each provider on eve
 |---|---|---|
 | `timeout` | `5000` | Max wait (ms) for the `/models` response. Prevents a slow or hung provider from blocking startup. |
 | `cacheTTL` | `0` | How long (ms) to reuse the last fetched model list without re-requesting. Set to `300000` (5 min) to skip the request on most restarts. `0` disables caching. |
+| `refreshInterval` | `3600000` | Interval (ms) for re-fetching the model list, defaulting to once per hour. Reload is triggered only when the list actually changes; a failed refresh keeps the previous list. Set to `0` to disable. Applies to the OpenCode v2 plugin only (v1 syncs once at startup). |
 
 ## Model enrichment (optional)
 
