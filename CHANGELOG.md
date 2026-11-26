@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-26
 
 - feat: 支持自定义请求头，三层来源优先级为 插件全局 `headers` < provider 配置 headers（v1 的 `options.headers` / v2 的 `settings.headers`）< `provider` 条目上的 `headers`
 - feat: header 值支持 `{env:VAR}` 整值展开，环境变量缺失时丢弃该 header 并告警，避免发出空鉴权头
