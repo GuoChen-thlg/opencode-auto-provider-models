@@ -210,6 +210,42 @@ v2 模型结构（`capabilities.tools`、`capabilities.input`、`capabilities.ou
 }
 ```
 
+### 自定义请求头
+
+有些网关需要额外的鉴权头或路由头（如 `x-api-key`、`anthropic-version`）。插件支持三层 headers 配置，优先级从低到高：
+
+1. 插件全局 `headers`
+2. provider 配置里的 headers（v1 读 `provider.<name>.options.headers`，v2 读 `settings.headers`）
+3. `provider` 条目对象上的 `headers`
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": [
+          {
+            "id": "custom-provider",
+            "headers": {
+              "x-api-key": "{env:CUSTOM_PROVIDER_API_KEY}",
+              "anthropic-version": "2023-06-01"
+            }
+          }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+规则：
+
+- 值支持 `{env:VAR}` 整值展开；环境变量不存在时该 header 会被丢弃并打印告警，不会发出空鉴权头
+- header 名大小写不敏感地合并，同名时高优先级来源覆盖低优先级来源
+- 显式提供了 `authorization` 时，插件不会再用 `apiKey` 覆盖它；未提供时仍按 `Bearer ${apiKey}` 自动补齐
+- headers 参与缓存键，不同 headers 的请求不会命中同一份 `cacheTTL` 缓存
+
 ## 启动性能
 
 插件在每次启动时都会对每个 provider 的 `${baseURL}/models` 发起 HTTP 请求。以下选项可以控制这一行为：
