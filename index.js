@@ -36,8 +36,23 @@ const inflightRequests = new Map()
 // v2 专用：记录每个 provider 已同步的模型列表
 const syncedModels = new Map()
 
-function getCacheKey(baseURL, apiKey) {
-  return `${baseURL}|${apiKey || ""}`
+/**
+ * 把 headers 序列化成稳定字符串（键名小写并按字典序排序），
+ * 用于缓存键：header 不同的请求必须命中不同的缓存条目。
+ */
+function serializeHeaders(headers) {
+  if (!headers || typeof headers !== "object") return ""
+  return Object.entries(headers)
+    .map(([key, value]) => [key.toLowerCase(), String(value)])
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `${key}:${value}`)
+    .join("&")
+}
+
+function getCacheKey(baseURL, apiKey, headers) {
+  const base = `${baseURL}|${apiKey || ""}`
+  const headerPart = serializeHeaders(headers)
+  return headerPart ? `${base}|${headerPart}` : base
 }
 
 function normalizeBaseUrl(baseURL) {
@@ -109,6 +124,80 @@ function resolveEnvTemplate(value) {
     if (match) return process.env[match[1]] || undefined
   }
   return value
+}
+
+const ENV_TEMPLATE_RE = /^\{env:([^}]+)\}$/
+
+/**
+ * 规范化一组 headers：去掉空名/空值，并对字符串值做 {env:VAR} 展开。
+ * {env:VAR} 指向的环境变量不存在时丢弃该 header 并打印告警，避免发出空鉴权头。
+ */
+function normalizeHeaders(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}
+
+  const result = {}
+  for (const [rawKey, rawValue] of Object.entries(raw)) {
+    const key = typeof rawKey === "string" ? rawKey.trim() : ""
+    if (!key) continue
+    if (rawValue === undefined || rawValue === null) continue
+
+    const value = resolveEnvTemplate(rawValue)
+    if (value === undefined || value === null) {
+      if (typeof rawValue === "string" && ENV_TEMPLATE_RE.test(rawValue)) {
+        console.warn(`[auto-provider-models] missing env var for header ${key}: ${rawValue}`)
+      }
+      continue
+    }
+
+    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue
+    result[key] = String(value)
+  }
+
+  return result
+}
+
+/**
+ * 按 header 名（大小写不敏感）合并多个来源，后面的来源覆盖前面的，且保留最终来源的原始大小写。
+ */
+function mergeHeaders(...sources) {
+  const merged = new Map()
+  for (const source of sources) {
+    if (!source || typeof source !== "object") continue
+    for (const [key, value] of Object.entries(source)) {
+      merged.set(key.toLowerCase(), [key, value])
+    }
+  }
+
+  const result = {}
+  for (const [key, value] of merged.values()) {
+    result[key] = value
+  }
+  return result
+}
+
+/**
+ * 汇总某个 provider 请求 /models 时使用的 headers：
+ * 插件全局 headers < provider 配置 headers < provider 条目 headers。
+ */
+function resolveRequestHeaders(providerEntry, globalOpts, providerConfigHeaders) {
+  return mergeHeaders(
+    normalizeHeaders(globalOpts?.headers),
+    normalizeHeaders(providerConfigHeaders),
+    normalizeHeaders(providerEntry?.headers),
+  )
+}
+
+/**
+ * 生成最终发往 /models 的请求头：
+ * 默认 content-type 可被自定义 headers 覆盖；由 apiKey 派生的 authorization
+ * 只在用户没有显式提供 authorization 时生效。
+ * 入参 customHeaders 应已经过 resolveRequestHeaders 规范化，此处不再重复展开 {env:VAR}。
+ */
+function buildRequestHeaders(apiKey, customHeaders) {
+  const headers = mergeHeaders({ "content-type": "application/json" }, customHeaders)
+  const hasAuthorization = Object.keys(headers).some((key) => key.toLowerCase() === "authorization")
+  if (apiKey && !hasAuthorization) headers.authorization = `Bearer ${apiKey}`
+  return headers
 }
 
 // ---- v1 enrichment ----
@@ -265,15 +354,14 @@ function getApiKey(options, perProviderOpts, globalOpts) {
   return null
 }
 
-async function fetchRemoteModels(baseURL, apiKey, timeoutMs) {
-  const cacheKey = getCacheKey(baseURL, apiKey)
+async function fetchRemoteModels(baseURL, apiKey, timeoutMs, customHeaders) {
+  const headers = buildRequestHeaders(apiKey, customHeaders)
+  const cacheKey = getCacheKey(baseURL, apiKey, headers)
 
   const inflight = inflightRequests.get(cacheKey)
   if (inflight) return inflight
 
   const promise = (async () => {
-    const headers = { "content-type": "application/json" }
-    if (apiKey) headers.authorization = `Bearer ${apiKey}`
     const reqUrl = `${baseURL}/models`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -347,6 +435,7 @@ function normalizeProviderEntry(entry) {
       ...(entry.baseURL ? { baseURL: normalizeBaseUrl(entry.baseURL) } : {}),
       ...(entry.apiKey ? { apiKey: entry.apiKey.trim() } : {}),
       ...(entry.apiKeyEnv ? { apiKeyEnv: entry.apiKeyEnv } : {}),
+      ...(entry.headers && typeof entry.headers === "object" ? { headers: entry.headers } : {}),
     }
   }
   return null
@@ -376,9 +465,12 @@ async function syncProviderV1(config, providerEntry, globalOpts) {
     providerConfig.models && typeof providerConfig.models === "object" ? providerConfig.models : {}
 
   try {
-    const apiKey = getApiKey(providerConfig.options || providerConfig.settings, providerEntry, globalOpts)
+    const providerSettings = providerConfig.options || providerConfig.settings
+    const apiKey = getApiKey(providerSettings, providerEntry, globalOpts)
+    const headers = resolveRequestHeaders(providerEntry, globalOpts, providerSettings?.headers)
 
-    const cacheKey = getCacheKey(baseURL, apiKey)
+    const requestHeaders = buildRequestHeaders(apiKey, headers)
+    const cacheKey = getCacheKey(baseURL, apiKey, requestHeaders)
     const cached = cacheTTL > 0 ? modelCache.get(cacheKey) : null
     if (cached && Date.now() - cached.timestamp < cacheTTL) {
       providerConfig.models = cached.models
@@ -392,7 +484,7 @@ async function syncProviderV1(config, providerEntry, globalOpts) {
       })
     }
 
-    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
+    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs, headers)
     const nextModels = { ...existingModels }
 
     for (const remoteModel of remoteModels) {
@@ -436,8 +528,10 @@ async function syncProviderV2(ctx, providerEntry, globalOpts) {
 
   try {
     const apiKey = getApiKey(providerSettings, providerEntry, globalOpts)
+    const headers = resolveRequestHeaders(providerEntry, globalOpts, providerSettings?.headers)
 
-    const cacheKey = getCacheKey(baseURL, apiKey)
+    const requestHeaders = buildRequestHeaders(apiKey, headers)
+    const cacheKey = getCacheKey(baseURL, apiKey, requestHeaders)
     const cached = cacheTTL > 0 ? modelCache.get(cacheKey) : null
     if (cached && Date.now() - cached.timestamp < cacheTTL) {
       syncedModels.set(providerID, cached.items)
@@ -451,7 +545,7 @@ async function syncProviderV2(ctx, providerEntry, globalOpts) {
       })
     }
 
-    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
+    const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs, headers)
     const items = []
 
     let existingModels = new Map()
@@ -534,6 +628,7 @@ async function syncProvidersV2(ctx, entries) {
 
     const timeoutMs = Number.isFinite(ctx.options.timeout) ? ctx.options.timeout : DEFAULT_TIMEOUT
     const apiKey = getApiKey(settings, entry, ctx.options)
+    const headers = resolveRequestHeaders(entry, ctx.options, settings?.headers)
 
     try {
       let enrichCache = null
@@ -543,7 +638,7 @@ async function syncProvidersV2(ctx, entries) {
         })
       }
 
-      const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs)
+      const remoteModels = await fetchRemoteModels(baseURL, apiKey, timeoutMs, headers)
       const items = []
 
       for (const remoteModel of remoteModels) {

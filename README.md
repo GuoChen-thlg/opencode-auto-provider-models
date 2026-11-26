@@ -189,6 +189,42 @@ If the provider's `options.apiKey` is not the final key to use, you can explicit
 }
 ```
 
+### Custom headers
+
+Some gateways require extra auth or routing headers (such as `x-api-key` or `anthropic-version`). Headers can be configured at three levels, from lowest to highest priority:
+
+1. Plugin-level `headers`
+2. Provider config headers (v1 reads `provider.<name>.options.headers`, v2 reads `settings.headers`)
+3. `headers` on the entry object inside the `provider` option
+
+```jsonc
+{
+  "plugin": [
+    [
+      "@guochen-thlg/opencode-auto-provider-models",
+      {
+        "provider": [
+          {
+            "id": "custom-provider",
+            "headers": {
+              "x-api-key": "{env:CUSTOM_PROVIDER_API_KEY}",
+              "anthropic-version": "2023-06-01"
+            }
+          }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+Rules:
+
+- Values support full-value `{env:VAR}` expansion; if the environment variable is missing, that header is dropped with a warning instead of being sent empty
+- Header names merge case-insensitively; on conflict the higher-priority source wins
+- If you explicitly provide `authorization`, the plugin will not overwrite it with `apiKey`; otherwise it still fills in `Bearer ${apiKey}`
+- Headers participate in the cache key, so requests with different headers never share the same `cacheTTL` cache entry
+
 ## Startup performance
 
 The plugin sends an HTTP request to `${baseURL}/models` for each provider on every startup. Two options help control this:

@@ -620,6 +620,218 @@ describe("plugin entry", () => {
   })
 })
 
+// ---- 自定义请求 headers ----
+
+describe("custom headers", () => {
+  before(() => mock.method(globalThis, "fetch"))
+  after(() => mock.restoreAll())
+
+  // 设置一个只返回成功响应的 fetch mock，并记录每次请求的 headers
+  function captureFetch(captured) {
+    globalThis.fetch.mock.mockImplementation(async (_url, opts) => {
+      captured.push(opts?.headers || {})
+      return { ok: true, status: 200, json: async () => MODELS_PAYLOAD }
+    })
+  }
+
+  // 从请求 headers 中按大小写不敏感方式取值
+  function readHeader(headers, name) {
+    const key = Object.keys(headers).find((item) => item.toLowerCase() === name.toLowerCase())
+    return key === undefined ? undefined : headers[key]
+  }
+
+  it("发送插件级全局 headers", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-global",
+      headers: { "x-tenant": "acme" },
+    })
+    await result.config(makeConfig("hdr-global"))
+
+    assert.equal(captured.length, 1)
+    assert.equal(readHeader(captured[0], "x-tenant"), "acme")
+    // 内置 content-type 仍然存在
+    assert.equal(readHeader(captured[0], "content-type"), "application/json")
+  })
+
+  it("provider 配置中的 headers 覆盖全局 headers", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-provider",
+      headers: { "x-tenant": "global", "x-scope": "global" },
+    })
+    await result.config(
+      makeConfig("hdr-provider", {
+        options: { headers: { "x-tenant": "provider" } },
+      })
+    )
+
+    assert.equal(readHeader(captured[0], "x-tenant"), "provider")
+    // 未被覆盖的全局 header 保留
+    assert.equal(readHeader(captured[0], "x-scope"), "global")
+  })
+
+  it("provider 条目中的 headers 优先级最高", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-entry",
+      headers: { "x-tenant": "global" },
+    })
+    await result.config(
+      makeConfig("hdr-entry", {
+        options: { headers: { "x-tenant": "provider" } },
+      })
+    )
+    // 上一个用例已经证明 provider 配置覆盖全局，这里再叠加条目级覆盖
+    const captured2 = []
+    captureFetch(captured2)
+    const result2 = await plugin(null, {
+      provider: [{ id: "hdr-entry2", headers: { "x-tenant": "entry" } }],
+      headers: { "x-tenant": "global" },
+    })
+    await result2.config(
+      makeConfig("hdr-entry2", {
+        options: { headers: { "x-tenant": "provider" } },
+      })
+    )
+
+    assert.equal(readHeader(captured2[0], "x-tenant"), "entry")
+  })
+
+  it("展开 {env:VAR} 形式的 header 值", async () => {
+    const envBak = process.env.HEADER_TENANT_TOKEN
+    process.env.HEADER_TENANT_TOKEN = "tenant-from-env"
+
+    try {
+      const captured = []
+      captureFetch(captured)
+
+      const result = await plugin(null, {
+        provider: "hdr-env",
+        headers: { "x-tenant-token": "{env:HEADER_TENANT_TOKEN}" },
+      })
+      await result.config(makeConfig("hdr-env"))
+
+      assert.equal(readHeader(captured[0], "x-tenant-token"), "tenant-from-env")
+    } finally {
+      if (envBak === undefined) delete process.env.HEADER_TENANT_TOKEN
+      else process.env.HEADER_TENANT_TOKEN = envBak
+    }
+  })
+
+  it("环境变量缺失时丢弃该 header 并告警", async () => {
+    const captured = []
+    captureFetch(captured)
+    const warnings = []
+    mock.method(console, "warn", (msg) => warnings.push(msg))
+
+    delete process.env.HEADER_MISSING_VAR
+    const result = await plugin(null, {
+      provider: "hdr-missing-env",
+      headers: {
+        "x-tenant-token": "{env:HEADER_MISSING_VAR}",
+        "x-keep": "kept",
+      },
+    })
+    await result.config(makeConfig("hdr-missing-env"))
+
+    assert.equal(readHeader(captured[0], "x-tenant-token"), undefined)
+    assert.equal(readHeader(captured[0], "x-keep"), "kept")
+    assert.ok(warnings.some((w) => w.includes("missing env var") && w.includes("x-tenant-token")))
+  })
+
+  it("显式 authorization 不被 apiKey 覆盖", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-auth",
+      headers: { authorization: "Token explicit-token" },
+    })
+    await result.config(makeConfig("hdr-auth", { options: { apiKey: "sk-should-not-win" } }))
+
+    assert.equal(readHeader(captured[0], "authorization"), "Token explicit-token")
+  })
+
+  it("未提供 authorization 时仍由 apiKey 生成 Bearer", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-auto-auth",
+      headers: { "x-tenant": "acme" },
+    })
+    await result.config(makeConfig("hdr-auto-auth", { options: { apiKey: "sk-auto" } }))
+
+    assert.equal(readHeader(captured[0], "authorization"), "Bearer sk-auto")
+  })
+
+  it("同名 header 大小写不敏感去重，只保留一份", async () => {
+    const captured = []
+    captureFetch(captured)
+
+    const result = await plugin(null, {
+      provider: "hdr-case",
+      headers: { "X-Tenant": "global" },
+    })
+    await result.config(makeConfig("hdr-case"))
+    assert.equal(readHeader(captured[0], "x-tenant"), "global")
+
+    const captured2 = []
+    captureFetch(captured2)
+    const result2 = await plugin(null, {
+      provider: [{ id: "hdr-case2", headers: { "x-tenant": "entry" } }],
+      headers: { "X-Tenant": "global" },
+    })
+    await result2.config(makeConfig("hdr-case2"))
+
+    const tenantKeys = Object.keys(captured2[0]).filter((key) => key.toLowerCase() === "x-tenant")
+    assert.equal(tenantKeys.length, 1)
+    assert.equal(captured2[0][tenantKeys[0]], "entry")
+  })
+
+  it("headers 参与缓存键，不同 headers 不会共用缓存", async () => {
+    let fetchCount = 0
+    globalThis.fetch.mock.mockImplementation(async () => {
+      fetchCount++
+      return { ok: true, status: 200, json: async () => MODELS_PAYLOAD }
+    })
+
+    const baseURL = "https://hdr-cache.example.com/v1"
+    const result = await plugin(null, {
+      provider: [
+        { id: "hdr-cache-a", baseURL, apiKey: "sk-same", headers: { "x-tenant": "a" } },
+        { id: "hdr-cache-b", baseURL, apiKey: "sk-same", headers: { "x-tenant": "b" } },
+      ],
+      cacheTTL: 60000,
+    })
+    const config = {
+      provider: {
+        "hdr-cache-a": { options: { baseURL, apiKey: "sk-same" } },
+        "hdr-cache-b": { options: { baseURL, apiKey: "sk-same" } },
+      },
+    }
+    await result.config(config)
+    assert.equal(fetchCount, 2)
+
+    // 相同 headers 再次执行应命中缓存
+    const config2 = {
+      provider: {
+        "hdr-cache-a": { options: { baseURL, apiKey: "sk-same" } },
+        "hdr-cache-b": { options: { baseURL, apiKey: "sk-same" } },
+      },
+    }
+    await result.config(config2)
+    assert.equal(fetchCount, 2)
+  })
+})
+
 // ---- integration tests (real HTTP servers) ----
 
 describe("integration with real HTTP servers", () => {

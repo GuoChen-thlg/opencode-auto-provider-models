@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-11-26
+
+- feat: 支持自定义请求头，三层来源优先级为 插件全局 `headers` < provider 配置 headers（v1 的 `options.headers` / v2 的 `settings.headers`）< `provider` 条目上的 `headers`
+- feat: header 值支持 `{env:VAR}` 整值展开，环境变量缺失时丢弃该 header 并告警，避免发出空鉴权头
+- feat: header 名按大小写不敏感合并；显式提供的 `authorization` 不会被 `apiKey` 派生的 `Bearer` 覆盖
+- fix: `cacheTTL` 与 inflight 去重的缓存键纳入 headers，不同 headers 的请求不再互相串用缓存
+
 ## [0.4.0] - 2026-11-04
 
 - fix: v2 enrich 不再覆盖远端声明的非默认 modalities，修复 models.dev 过时数据导致 image input 能力丢失；远端为默认纯文本时仍由 enrich 兜底，与 v1 行为对齐
